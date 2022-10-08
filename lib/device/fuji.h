@@ -33,5 +33,9 @@
 # include "iwm/fuji.h"
 #endif
 
+#ifdef BUILD_RC2014
+# include "rc2014/fuji.h"
+#endif
+
 
 #endif // DEVICE_FUJI_H

@@ -41,4 +41,9 @@
 #define SYSTEM_BUS RS232
 #endif
 
+#ifdef BUILD_RC2014
+#include "rc2014sio/rc2014sio.h"
+#define SYSTEM_BUS rc2014Bus
+#endif
+
 #endif // BUS_H
