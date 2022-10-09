@@ -134,7 +134,6 @@ void main_setup()
 #ifdef BUILD_RC2014
     theFuji.setup(&rc2014Bus);
     rc2014Bus.setup();
-    rc2014Bus.addDevice(&theFuji,0x70);
 #endif
 
 #ifdef BUILD_ADAM

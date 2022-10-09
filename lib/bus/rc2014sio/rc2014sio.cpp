@@ -148,10 +148,7 @@ void systemBus::addDevice(virtualDevice *pDevice, uint8_t device_id)
 
     switch (device_id)
     {
-    case 0x02:
-        _printerDev = (rc2014Printer *)pDevice;
-        break;
-    case 0x0f:
+    case RC2014_DEVICEID_FUJINET:
         _fujiDev = (rc2014Fuji *)pDevice;
         break;
     }

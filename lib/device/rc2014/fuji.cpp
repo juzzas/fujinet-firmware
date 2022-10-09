@@ -995,17 +995,17 @@ void rc2014Fuji::setup(systemBus *siobus)
     // Disable status_wait if our settings say to turn it off
     status_wait_enabled = false;
 
-    _rc2014_bus->addDevice(&_fnDisks[0].disk_dev, rc2014_DEVICEID_DISK);
-    _rc2014_bus->addDevice(&_fnDisks[1].disk_dev, rc2014_DEVICEID_DISK + 1);
-    _rc2014_bus->addDevice(&_fnDisks[2].disk_dev, rc2014_DEVICEID_DISK + 2);
-    _rc2014_bus->addDevice(&_fnDisks[3].disk_dev, rc2014_DEVICEID_DISK + 3);
+    _rc2014_bus->addDevice(&_fnDisks[0].disk_dev, RC2014_DEVICEID_DISK);
+    _rc2014_bus->addDevice(&_fnDisks[1].disk_dev, RC2014_DEVICEID_DISK + 1);
+    _rc2014_bus->addDevice(&_fnDisks[2].disk_dev, RC2014_DEVICEID_DISK + 2);
+    _rc2014_bus->addDevice(&_fnDisks[3].disk_dev, RC2014_DEVICEID_DISK + 3);
 
     //FILE *f = fnSPIFFS.file_open("/autorun.ddp");
     //_fnDisks[0].disk_dev.mount(f, "/autorun.ddp", 262144, MEDIATYPE_DDP);
 
     theNetwork = new rc2014Network();
-    _rc2014_bus->addDevice(theNetwork, 0x09); // temporary.
-    _rc2014_bus->addDevice(&theFuji, 0x0F);   // Fuji becomes the gateway device.
+    _rc2014_bus->addDevice(theNetwork, RC2014_DEVICEID_FN_NETWORK); // temporary.
+    _rc2014_bus->addDevice(&theFuji, RC2014_DEVICEID_FUJINET);   // Fuji becomes the gateway device.
 
     // Add our devices to the rc2014 bus
     // for (int i = 0; i < 4; i++)
