@@ -41,7 +41,6 @@
 
 #ifdef BUILD_RC2014
 # include "rc2014/mediaType.h"
-# include "rc2014/mediaTypeDSK.h"
 #endif
 
 #ifdef NEW_TARGET

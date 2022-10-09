@@ -16,7 +16,8 @@
 enum mediatype_t 
 {
     MEDIATYPE_UNKNOWN = 0,
-    MEDIATYPE_DSK,
+    //MEDIATYPE_IMG,   // 1.44meg RomWBW floppy disk image
+    //MEDIATYPE_HD     // 8meg RomWBW disk splice
     MEDIATYPE_COUNT
 };
 

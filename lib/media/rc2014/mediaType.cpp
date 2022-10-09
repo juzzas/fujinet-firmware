@@ -41,11 +41,11 @@ mediatype_t MediaType::discover_mediatype(const char *filename)
     if (l > 4 && filename[l - 4] == '.')
     {
         // Check the last 3 characters of the string
-        const char *ext = filename + l - 3;
-        if (strcasecmp(ext, "DSK") == 0)
-        {
-            return MEDIATYPE_DSK;
-        }
+        //const char *ext = filename + l - 3;
+        //if (strcasecmp(ext, "DSK") == 0)
+        //{
+        //    return MEDIATYPE_DSK;
+        //}
     }
     return MEDIATYPE_UNKNOWN;
 }

@@ -51,11 +51,13 @@ mediatype_t rc2014Disk::mount(FILE *f, const char *filename, uint32_t disksize, 
 
     switch (disk_type)
     {
-    case MEDIATYPE_DSK:
-        _media = new MediaTypeDSK();
-        mt = _media->mount(f, disksize);
-        device_active = true;
-        break;
+        // currently, we're not supporting disk on RC2014.
+        // but planning on supporting the 8meg and floppy formats used in RomWBW
+//    case MEDIATYPE_IMG:
+//        _media = new MediaTypeIMG();
+//        mt = _media->mount(f, disksize);
+//        device_active = true;
+//        break;
     default:
         device_active = false;
         break;
