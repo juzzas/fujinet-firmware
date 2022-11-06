@@ -185,7 +185,7 @@ private:
     bool answered=false;
 
     void rc2014_control_status() override;                 
-    void rc2014_process(uint8_t b) override;
+    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
     
     void crx_toggle(bool toggle);                // CRX active/inactive?
 

@@ -111,8 +111,12 @@ void rc2014Printer::rc2014_control_ready()
     rc2014_response_ack();
 }
 
-void rc2014Printer::rc2014_process(uint8_t b)
+void rc2014Printer::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
+
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
 }
 
 void rc2014Printer::shutdown()

@@ -1167,8 +1167,12 @@ void rc2014Fuji::rc2014_control_clr()
     response_len = 0;
 }
 
-void rc2014Fuji::rc2014_process(uint8_t b)
+void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
+
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
 }
 
 int rc2014Fuji::get_disk_id(int drive_slot)

@@ -30,7 +30,7 @@ protected:
     virtual void rc2014_control_send();
     virtual void rc2014_control_ready();
 
-    void rc2014_process(uint8_t b) override;
+    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
     void shutdown() override;
 
     printer_emu *_pptr = nullptr;

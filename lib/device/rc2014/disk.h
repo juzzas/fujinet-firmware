@@ -27,7 +27,7 @@ private:
     virtual void rc2014_response_status();
     void rc2014_response_send();
 
-    void rc2014_process(uint8_t b) override;
+    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
 
 public:
     rc2014Disk();

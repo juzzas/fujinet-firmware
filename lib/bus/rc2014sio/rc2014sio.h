@@ -70,6 +70,11 @@ protected:
     void rc2014_send(uint8_t b);
 
     /**
+     * @brief Flush output to rc2014
+    */
+    void rc2014_flush();
+
+    /**
      * @brief Send buffer to rc2014
      * @param buf Buffer to send to rc2014
      * @param len Length of buffer
@@ -132,6 +137,16 @@ protected:
     virtual void rc2014_response_nack();
 
     /**
+     * @brief send complete signal, but not if cmd took too long
+     */
+    virtual void rc2014_send_complete();
+
+    /**
+     * @brief send complete signal, but not if cmd took too long
+     */
+    virtual void rc2014_send_error();
+
+    /**
      * @brief acknowledge if device is ready, but not if cmd took too long.
      */
     virtual void rc2014_control_ready();
@@ -142,12 +157,11 @@ protected:
     uint8_t _devnum;
 
     virtual void shutdown() {}
-
     /**
-     * @brief process the next packet with the active device.
-     * @param b first byte of packet.
+     * @brief All RS232 devices repeatedly call this routine to fan out to other methods for each command. 
+     * This is typcially implemented as a switch() statement.
      */
-    virtual void rc2014_process(uint8_t b);
+    virtual void rc2014_process(uint32_t commanddata, uint8_t checksum) = 0;
 
     /**
      * @brief Do any tasks that can only be done when the bus is quiet

@@ -34,4 +34,6 @@
 #define PIN_RS232_RTS       33 // (IN) Request to Send
 #define PIN_RS232_CTS       26 // (OUT) Clear to Send
 
+#define PIN_CMD       27
+
 #endif /* PINMAP_RC2014SIO_REV0 */

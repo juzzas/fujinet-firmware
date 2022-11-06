@@ -197,8 +197,12 @@ void rc2014Disk::rc2014_response_send()
     rc2014_send_buffer(b, sizeof(b));
 }
 
-void rc2014Disk::rc2014_process(uint8_t b)
+void rc2014Disk::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
+
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
 }
 
 #endif /* NEW_TARGET */
