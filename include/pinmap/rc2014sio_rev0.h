@@ -30,9 +30,9 @@
 /* Audio Output - samlib.h */
 #define PIN_DAC1 25 // not connected
 
-/* RS232 Pins */
-#define PIN_RS232_RTS       33 // (IN) Request to Send
-#define PIN_RS232_CTS       26 // (OUT) Clear to Send
+/* DCE Pins */
+#define PIN_RS232_RTS       26 //33 // (IN) Request to Send
+#define PIN_RS232_CTS       33 //26 // (OUT) Clear to Send
 
 #define PIN_CMD       32
 

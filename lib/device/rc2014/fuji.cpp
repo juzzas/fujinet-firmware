@@ -88,7 +88,7 @@ void rc2014Fuji::rc2014_net_scan_networks()
 {
     Debug_println("Fuji cmd: SCAN NETWORKS");
 
-    rc2014_recv(); // get ck
+    rc2014_response_ack();
 
     isReady = false;
 
@@ -104,7 +104,10 @@ void rc2014Fuji::rc2014_net_scan_networks()
     response[0] = _countScannedSSIDs;
     response_len = 1;
 
-    rc2014_response_ack();
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
 }
 
 // Return scanned network entry
@@ -113,9 +116,9 @@ void rc2014Fuji::rc2014_net_scan_result()
     Debug_println("Fuji cmd: GET SCAN RESULT");
     scanStarted = false;
 
-    uint8_t n = rc2014_recv();
+    uint8_t n = cmdFrame.aux1;
 
-    rc2014_recv(); // get CK
+    rc2014_response_ack();
 
     // Response to FUJICMD_GET_SCAN_RESULT
     struct
@@ -134,9 +137,11 @@ void rc2014Fuji::rc2014_net_scan_result()
     memset(response, 0, sizeof(response));
     memcpy(response, &detail, sizeof(detail));
     response_len = 33;
-
     
-    rc2014_response_ack();
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
 }
 
 //  Get SSID
@@ -224,8 +229,8 @@ void rc2014Fuji::rc2014_net_get_wifi_status()
     response[0] = wifiStatus;
     response_len = 1;
 
-    rc2014_send(wifiStatus);
-    rc2014_send(rc2014_checksum(&wifiStatus, 1));
+    rc2014_send(response[0]);
+    rc2014_send(rc2014_checksum(response, 1));
     
     rc2014_send_complete();
 }
@@ -1073,101 +1078,6 @@ rc2014Disk *rc2014Fuji::bootdisk()
     return _bootDisk;
 }
 
-void rc2014Fuji::rc2014_control_send()
-{
-    uint16_t s = rc2014_recv_length();
-    uint8_t c = rc2014_recv();
-
-    switch (c)
-    {
-    case FUJICMD_RESET:
-        rc2014_reset_fujinet();
-        break;
-    case FUJICMD_GET_SSID:
-        rc2014_net_get_ssid();
-        break;
-    case FUJICMD_SCAN_NETWORKS:
-        rc2014_net_scan_networks();
-        break;
-    case FUJICMD_GET_SCAN_RESULT:
-        rc2014_net_scan_result();
-        break;
-    case FUJICMD_SET_SSID:
-        rc2014_net_set_ssid(s);
-        break;
-    case FUJICMD_GET_WIFISTATUS:
-        rc2014_net_get_wifi_status();
-        break;
-    case FUJICMD_MOUNT_HOST:
-        rc2014_mount_host();
-        break;
-    case FUJICMD_MOUNT_IMAGE:
-        rc2014_disk_image_mount();
-        break;
-    case FUJICMD_OPEN_DIRECTORY:
-        rc2014_open_directory(s);
-        break;
-    case FUJICMD_READ_DIR_ENTRY:
-        rc2014_read_directory_entry();
-        break;
-    case FUJICMD_CLOSE_DIRECTORY:
-        rc2014_close_directory();
-        break;
-    case FUJICMD_READ_HOST_SLOTS:
-        rc2014_read_host_slots();
-        break;
-    case FUJICMD_WRITE_HOST_SLOTS:
-        rc2014_write_host_slots();
-        break;
-    case FUJICMD_READ_DEVICE_SLOTS:
-        rc2014_read_device_slots();
-        break;
-    case FUJICMD_WRITE_DEVICE_SLOTS:
-        rc2014_write_device_slots();
-        break;
-    case FUJICMD_UNMOUNT_IMAGE:
-        rc2014_disk_image_umount();
-        break;
-    case FUJICMD_GET_ADAPTERCONFIG:
-        rc2014_get_adapter_config();
-        break;
-    case FUJICMD_NEW_DISK:
-        rc2014_new_disk();
-        break;
-    case FUJICMD_GET_DIRECTORY_POSITION:
-        rc2014_get_directory_position();
-        break;
-    case FUJICMD_SET_DIRECTORY_POSITION:
-        rc2014_set_directory_position();
-        break;
-    case FUJICMD_SET_DEVICE_FULLPATH:
-        rc2014_set_device_filename(s);
-        break;
-    case FUJICMD_GET_DEVICE_FULLPATH:
-        rc2014_get_device_filename();
-        break;
-    case FUJICMD_CONFIG_BOOT:
-        rc2014_set_boot_config();
-        break;
-    case FUJICMD_ENABLE_DEVICE:
-        rc2014_enable_device();
-        break;
-    case FUJICMD_DISABLE_DEVICE:
-        rc2014_disable_device();
-        break;
-    }
-}
-
-void rc2014Fuji::rc2014_control_clr()
-{
-    rc2014_send(0xBF);
-    rc2014_send_length(response_len);
-    rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
-    rc2014_recv(); // get the ack.
-    memset(response, 0, sizeof(response));
-    response_len = 0;
-}
 
 void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
@@ -1183,14 +1093,12 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case FUJICMD_RESET:
         rc2014_reset_fujinet();
         break;
-    // case FUJICMD_SCAN_NETWORKS:
-    //     rs232_ack();
-    //     rs232_net_scan_networks();
-    //     break;
-    // case FUJICMD_GET_SCAN_RESULT:
-    //     rs232_ack();
-    //     rs232_net_scan_result();
-    //     break;
+    case FUJICMD_SCAN_NETWORKS:
+        rc2014_net_scan_networks();
+        break;
+    case FUJICMD_GET_SCAN_RESULT:
+        rc2014_net_scan_result();
+        break;
     // case FUJICMD_SET_SSID:
     //     rs232_ack();
     //     rs232_net_set_ssid();

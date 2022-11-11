@@ -34,6 +34,16 @@ void virtualDevice::rc2014_flush()
 
 void virtualDevice::rc2014_send_buffer(uint8_t *buf, unsigned short len)
 {
+    for (int i = 0; i < len; i++) {
+        Debug_printf("[%d]%02x ", i, buf[i]);
+
+        while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW)
+            fnSystem.yield();
+            
+        //usleep(100000);
+        fnUartSIO.write(buf[i]);
+    }
+        Debug_printf("\n");
 }
 
 uint8_t virtualDevice::rc2014_recv()
@@ -66,7 +76,10 @@ void virtualDevice::rc2014_send_length(uint16_t l)
 
 unsigned short virtualDevice::rc2014_recv_buffer(uint8_t *buf, unsigned short len)
 {
-    return 0;
+    while (fnUartSIO.available() <= 0)
+        fnSystem.yield();
+
+    return fnUartSIO.readBytes(buf, len);
 }
 
 uint32_t virtualDevice::rc2014_recv_blockno()
