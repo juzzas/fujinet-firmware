@@ -85,24 +85,28 @@ void virtualDevice::reset()
 
 void virtualDevice::rc2014_response_ack()
 {
+    Debug_println("ACK!");
     rc2014_send('A');
     rc2014_flush();
 }
 
 void virtualDevice::rc2014_response_nack()
 {
+    Debug_println("NAK!");
     rc2014_send('N');
     rc2014_flush();
 }
 
 void virtualDevice::rc2014_send_complete()
 {
+    Debug_println("COMPLETE!");
     rc2014_send('C');
     rc2014_flush();
 }
 
 void virtualDevice::rc2014_send_error()
 {
+    Debug_println("ERROR!");
     rc2014_send('E');
     rc2014_flush();
 }
@@ -152,9 +156,11 @@ void systemBus::_rc2014_process_cmd()
     tempFrame.commanddata = 0;
     tempFrame.checksum = 0;
 
-    if (fnUartSIO.readBytes((uint8_t *)&tempFrame, sizeof(tempFrame)) != sizeof(tempFrame))
+    size_t bytes_read = fnUartSIO.readBytes((uint8_t *)&tempFrame, sizeof(tempFrame));
+
+    if (bytes_read != sizeof(tempFrame))
     {
-        Debug_println("Timeout waiting for data after CMD pin asserted");
+        Debug_printf("Timeout waiting for data after CMD pin asserted (bytes_read = %d)\n", (int)bytes_read);
         return;
     }
     // Turn on the RS232 indicator LED
@@ -218,6 +224,41 @@ void systemBus::_rc2014_process_queue()
 
 void systemBus::service()
 {
+#if 0
+    if (_cpmDev != nullptr && _cpmDev->cpmActive)
+    {
+        _cpmDev->rs232_handle_cpm();
+        return; // break!
+    }    
+#endif
+    // Go process a command frame if the RS232 CMD line is asserted
+    if (fnSystem.digital_read(PIN_CMD) == DIGI_LOW)
+    {
+        Debug_println("RC2014 CMD low");
+        _rc2014_process_cmd();
+    }
+#if 0
+    // Go check if the modem needs to read data if it's active
+    else if (_modemDev != nullptr && _modemDev->modemActive && Config.get_modem_enabled())
+    {
+        _modemDev->rs232_handle_modem();
+    }
+#endif
+    else
+    // Neither CMD nor active modem, so throw out any stray input data
+    {
+        //Debug_println("RS232 Srvc Flush");
+        fnUartSIO.flush_input();
+    }
+
+#if 0
+    // Handle interrupts from network protocols
+    for (int i = 0; i < 8; i++)
+    {
+        if (_netDev[i] != nullptr)
+            _netDev[i]->rs232_poll_interrupt();
+    }
+#endif
 }
 
 void systemBus::setup()

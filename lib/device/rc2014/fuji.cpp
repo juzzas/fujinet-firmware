@@ -77,9 +77,9 @@ void rc2014Fuji::rc2014_control_status()
 // Reset FujiNet
 void rc2014Fuji::rc2014_reset_fujinet()
 {
-    rc2014_recv(); // get ck
-    Debug_println("rc2014 RESET FUJINET");
     rc2014_response_ack();
+    Debug_println("rc2014 RESET FUJINET");
+    rc2014_send_complete();
     fnSystem.reboot();
 }
 
@@ -217,15 +217,17 @@ void rc2014Fuji::rc2014_net_set_ssid(uint16_t s)
 // Get WiFi Status
 void rc2014Fuji::rc2014_net_get_wifi_status()
 {
-    rc2014_recv(); // Get CK
+    rc2014_response_ack();
     Debug_println("Fuji cmd: GET WIFI STATUS");
     // WL_CONNECTED = 3, WL_DISCONNECTED = 6
     uint8_t wifiStatus = fnWiFi.connected() ? 3 : 6;
     response[0] = wifiStatus;
     response_len = 1;
 
+    rc2014_send(wifiStatus);
+    rc2014_send(rc2014_checksum(&wifiStatus, 1));
     
-    rc2014_response_ack();
+    rc2014_send_complete();
 }
 
 // Mount Server
@@ -1172,7 +1174,150 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     cmdFrame.commanddata = commanddata;
     cmdFrame.checksum = checksum;
 
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
+    switch (cmdFrame.comnd)
+    {
+    // case FUJICMD_STATUS:
+    //     rc2014_response_ack();
+    //     rs232_status();
+    //     break;
+    case FUJICMD_RESET:
+        rc2014_reset_fujinet();
+        break;
+    // case FUJICMD_SCAN_NETWORKS:
+    //     rs232_ack();
+    //     rs232_net_scan_networks();
+    //     break;
+    // case FUJICMD_GET_SCAN_RESULT:
+    //     rs232_ack();
+    //     rs232_net_scan_result();
+    //     break;
+    // case FUJICMD_SET_SSID:
+    //     rs232_ack();
+    //     rs232_net_set_ssid();
+    //     break;
+    // case FUJICMD_GET_SSID:
+    //     rs232_ack();
+    //     rs232_net_get_ssid();
+    //     break;
+    case FUJICMD_GET_WIFISTATUS:
+        rc2014_net_get_wifi_status();
+        break;
+    // case FUJICMD_MOUNT_HOST:
+    //     rs232_ack();
+    //     rs232_mount_host();
+    //     break;
+    // case FUJICMD_MOUNT_IMAGE:
+    //     rs232_ack();
+    //     rs232_disk_image_mount();
+    //     break;
+    // case FUJICMD_OPEN_DIRECTORY:
+    //     rs232_ack();
+    //     rs232_open_directory();
+    //     break;
+    // case FUJICMD_READ_DIR_ENTRY:
+    //     rs232_ack();
+    //     rs232_read_directory_entry();
+    //     break;
+    // case FUJICMD_CLOSE_DIRECTORY:
+    //     rs232_ack();
+    //     rs232_close_directory();
+    //     break;
+    // case FUJICMD_GET_DIRECTORY_POSITION:
+    //     rs232_ack();
+    //     rs232_get_directory_position();
+    //     break;
+    // case FUJICMD_SET_DIRECTORY_POSITION:
+    //     rs232_ack();
+    //     rs232_set_directory_position();
+    //     break;
+    // case FUJICMD_READ_HOST_SLOTS:
+    //     rs232_ack();
+    //     rs232_read_host_slots();
+    //     break;
+    // case FUJICMD_WRITE_HOST_SLOTS:
+    //     rs232_ack();
+    //     rs232_write_host_slots();
+    //     break;
+    // case FUJICMD_READ_DEVICE_SLOTS:
+    //     rs232_ack();
+    //     rs232_read_device_slots();
+    //     break;
+    // case FUJICMD_WRITE_DEVICE_SLOTS:
+    //     rs232_ack();
+    //     rs232_write_device_slots();
+    //     break;
+    // case FUJICMD_GET_WIFI_ENABLED:
+    //     rs232_ack();
+    //     rs232_net_get_wifi_enabled();
+    //     break;
+    // case FUJICMD_UNMOUNT_IMAGE:
+    //     rs232_ack();
+    //     rs232_disk_image_umount();
+    //     break;
+    // case FUJICMD_GET_ADAPTERCONFIG:
+    //     rs232_ack();
+    //     rs232_get_adapter_config();
+    //     break;
+    // case FUJICMD_NEW_DISK:
+    //     rs232_ack();
+    //     rs232_new_disk();
+    //     break;
+    // case FUJICMD_SET_DEVICE_FULLPATH:
+    //     rs232_ack();
+    //     rs232_set_device_filename();
+    //     break;
+    // case FUJICMD_SET_HOST_PREFIX:
+    //     rs232_ack();
+    //     rs232_set_host_prefix();
+    //     break;
+    // case FUJICMD_GET_HOST_PREFIX:
+    //     rs232_ack();
+    //     rs232_get_host_prefix();
+    //     break;
+    // case FUJICMD_WRITE_APPKEY:
+    //     rs232_ack();
+    //     rs232_write_app_key();
+    //     break;
+    // case FUJICMD_READ_APPKEY:
+    //     rs232_ack();
+    //     rs232_read_app_key();
+    //     break;
+    // case FUJICMD_OPEN_APPKEY:
+    //     rs232_ack();
+    //     rs232_open_app_key();
+    //     break;
+    // case FUJICMD_CLOSE_APPKEY:
+    //     rs232_ack();
+    //     rs232_close_app_key();
+    //     break;
+    // case FUJICMD_GET_DEVICE_FULLPATH:
+    //     rs232_ack();
+    //     rs232_get_device_filename();
+    //     break;
+    // case FUJICMD_CONFIG_BOOT:
+    //     rs232_ack();
+    //     rs232_set_boot_config();
+    //     break;
+    // case FUJICMD_COPY_FILE:
+    //     rs232_ack();
+    //     rs232_copy_file();
+    //     break;
+    // case FUJICMD_MOUNT_ALL:
+    //     rs232_ack();
+    //     mount_all();
+    //     break;
+    // case FUJICMD_SET_BOOT_MODE:
+    //     rs232_ack();
+    //     rs232_set_boot_mode();
+    //     break;
+    // case FUJICMD_ENABLE_UDPSTREAM:
+    //     rs232_ack();
+    //     rs232_enable_udpstream();
+    //     break;
+    default:
+        fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
+        rc2014_response_nack();
+    }
 }
 
 int rc2014Fuji::get_disk_id(int drive_slot)

@@ -12,10 +12,10 @@
 /* UART - fnuart.cpp */
 #define PIN_UART0_RX 3  // USB Serial
 #define PIN_UART0_TX 1  // USB Serial
-#define PIN_UART1_RX 13  // RS232
-#define PIN_UART1_TX 21 // RS232
-#define PIN_UART2_RX 33 // not connected
-#define PIN_UART2_TX 21 // not connected
+#define PIN_UART1_RX 33 // not connected
+#define PIN_UART1_TX 21 // not connected
+#define PIN_UART2_RX 13 // RC2014 SIO
+#define PIN_UART2_TX 21 // RC2014 SIO
 
 /* Buttons - keys.cpp */
 #define PIN_BUTTON_A 0  // Button 0 on DEVKITC-VE
@@ -34,6 +34,6 @@
 #define PIN_RS232_RTS       33 // (IN) Request to Send
 #define PIN_RS232_CTS       26 // (OUT) Clear to Send
 
-#define PIN_CMD       27
+#define PIN_CMD       32
 
 #endif /* PINMAP_RC2014SIO_REV0 */
