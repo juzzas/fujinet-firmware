@@ -84,11 +84,11 @@ protected:
     void rc2014_net_get_ssid();           // 0xFE
     void rc2014_net_scan_networks();      // 0xFD
     void rc2014_net_scan_result();        // 0xFC
-    void rc2014_net_set_ssid(uint16_t s);           // 0xFB
+    void rc2014_net_set_ssid();           // 0xFB
     void rc2014_net_get_wifi_status();    // 0xFA
     void rc2014_mount_host();             // 0xF9
     void rc2014_disk_image_mount();       // 0xF8
-    void rc2014_open_directory(uint16_t s);         // 0xF7
+    void rc2014_open_directory();         // 0xF7
     void rc2014_read_directory_entry();   // 0xF6
     void rc2014_close_directory();        // 0xF5
     void rc2014_read_host_slots();        // 0xF4
@@ -101,8 +101,8 @@ protected:
     void rc2014_unmount_host();           // 0xE6
     void rc2014_get_directory_position(); // 0xE5
     void rc2014_set_directory_position(); // 0xE4
-    void rc2014_set_hrc2014_index();         // 0xE3
-    void rc2014_set_device_filename(uint16_t s);    // 0xE2
+    void rc2014_set_hrc2014_index();      // 0xE3
+    void rc2014_set_device_filename();    // 0xE2
     void rc2014_set_host_prefix();        // 0xE1
     void rc2014_get_host_prefix();        // 0xE0
     void rc2014_set_rc2014_external_clock(); // 0xDF

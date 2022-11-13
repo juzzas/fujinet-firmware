@@ -149,7 +149,7 @@ void rc2014Fuji::rc2014_net_get_ssid()
 {
     Debug_println("Fuji cmd: GET SSID");
 
-    rc2014_recv(); // get CK
+    rc2014_response_ack();
 
     // Response to FUJICMD_GET_SSID
     struct
@@ -177,18 +177,20 @@ void rc2014Fuji::rc2014_net_get_ssid()
     memcpy(response, &cfg, sizeof(cfg));
     response_len = sizeof(cfg);
 
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
     
-    rc2014_response_ack();
+    rc2014_send_complete();
 }
 
 // Set SSID
-void rc2014Fuji::rc2014_net_set_ssid(uint16_t s)
+void rc2014Fuji::rc2014_net_set_ssid()
 {
     if (!fnWiFi.connected() && setSSIDStarted == false)
     {
         Debug_println("Fuji cmd: SET SSID");
 
-        s--;
+        rc2014_response_ack();
 
         // Data for FUJICMD_SET_SSID
         struct
@@ -197,7 +199,7 @@ void rc2014Fuji::rc2014_net_set_ssid(uint16_t s)
             char password[MAX_WIFI_PASS_LEN];
         } cfg;
 
-        rc2014_recv_buffer((uint8_t *)&cfg, s);
+        rc2014_recv_buffer((uint8_t *)&cfg, sizeof(cfg));
 
         uint8_t ck = rc2014_recv();
 
@@ -206,7 +208,7 @@ void rc2014Fuji::rc2014_net_set_ssid(uint16_t s)
 
         bool save = true;
 
-        Debug_printf("Connecting to net: %s password: %s\n", cfg.ssid, cfg.password);
+        Debug_printf("Connecting to net: %s password: %s (length: %d)\n", cfg.ssid, cfg.password, strlen(cfg.password));
 
         fnWiFi.connect(cfg.ssid, cfg.password);
         setSSIDStarted = true;
@@ -217,7 +219,9 @@ void rc2014Fuji::rc2014_net_set_ssid(uint16_t s)
             Config.store_wifi_passphrase(cfg.password, sizeof(cfg.password));
             Config.save();
         }
+
     }
+    rc2014_send_complete();
 }
 // Get WiFi Status
 void rc2014Fuji::rc2014_net_get_wifi_status()
@@ -412,20 +416,14 @@ void rc2014Fuji::shutdown()
 
 char dirpath[256];
 
-void rc2014Fuji::rc2014_open_directory(uint16_t s)
+void rc2014Fuji::rc2014_open_directory()
 {
     Debug_println("Fuji cmd: OPEN DIRECTORY");
 
     uint8_t hostSlot = rc2014_recv();
 
-    s--;
-    s--;
-
-    rc2014_recv_buffer((uint8_t *)&dirpath, s);
-
+    rc2014_recv_buffer((uint8_t *)&dirpath, 256);
     rc2014_recv(); // Grab checksum
-
-    
 
     if (_current_open_directory_slot == -1)
     {
@@ -451,13 +449,8 @@ void rc2014Fuji::rc2014_open_directory(uint16_t s)
             _current_open_directory_slot = hostSlot;
         }
     }
-    else
-    {
-        
-        rc2014_response_ack();
-    }
 
-    response_len = 1;
+    rc2014_send_complete();
 }
 
 void _set_additional_direntry_details(fsdir_entry_t *f, uint8_t *dest, uint8_t maxlen)
@@ -654,9 +647,6 @@ void rc2014Fuji::rc2014_get_adapter_config()
 {
     Debug_println("Fuji cmd: GET ADAPTER CONFIG");
 
-    rc2014_recv(); // ck
-
-    
     rc2014_response_ack();
 
     // Response to FUJICMD_GET_ADAPTERCONFIG
@@ -683,6 +673,12 @@ void rc2014Fuji::rc2014_get_adapter_config()
 
     memcpy(response, &cfg, sizeof(cfg));
     response_len = sizeof(cfg);
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
+
 }
 
 //  Make new disk and shove into device slot
@@ -905,25 +901,26 @@ void rc2014Fuji::_populate_config_from_slots()
 char f[MAX_FILENAME_LEN];
 
 // Write a 256 byte filename to the device slot
-void rc2014Fuji::rc2014_set_device_filename(uint16_t s)
+void rc2014Fuji::rc2014_set_device_filename()
 {
-    unsigned char ds = rc2014_recv();
-    s--;
-    s--;
+    unsigned char ds = cmdFrame.aux1;
+    unsigned char flags = cmdFrame.aux2;
 
     Debug_printf("SET DEVICE SLOT %d filename\n", ds);
 
-    rc2014_recv_buffer((uint8_t *)&f, s);
+    rc2014_recv_buffer((uint8_t *)&f, 256);
+    rc2014_recv(); // CK
 
     Debug_printf("filename: %s\n", f);
 
-    rc2014_recv(); // CK
-
-    
     rc2014_response_ack();
 
     memcpy(_fnDisks[ds].filename, f, MAX_FILENAME_LEN);
+    _fnDisks[ds].access_mode = flags;
     _populate_config_from_slots();
+
+    rc2014_send_complete();
+
 }
 
 // Get a 256 byte filename from device slot
@@ -1099,14 +1096,12 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case FUJICMD_GET_SCAN_RESULT:
         rc2014_net_scan_result();
         break;
-    // case FUJICMD_SET_SSID:
-    //     rs232_ack();
-    //     rs232_net_set_ssid();
-    //     break;
-    // case FUJICMD_GET_SSID:
-    //     rs232_ack();
-    //     rs232_net_get_ssid();
-    //     break;
+    case FUJICMD_SET_SSID:
+        rc2014_net_set_ssid();
+        break;
+    case FUJICMD_GET_SSID:
+        rc2014_net_get_ssid();
+        break;
     case FUJICMD_GET_WIFISTATUS:
         rc2014_net_get_wifi_status();
         break;
@@ -1155,17 +1150,15 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     //     rs232_write_device_slots();
     //     break;
     // case FUJICMD_GET_WIFI_ENABLED:
-    //     rs232_ack();
-    //     rs232_net_get_wifi_enabled();
-    //     break;
+        // rc2014_net_get_wifi_enabled();
+        // break;
     // case FUJICMD_UNMOUNT_IMAGE:
     //     rs232_ack();
     //     rs232_disk_image_umount();
     //     break;
-    // case FUJICMD_GET_ADAPTERCONFIG:
-    //     rs232_ack();
-    //     rs232_get_adapter_config();
-    //     break;
+    case FUJICMD_GET_ADAPTERCONFIG:
+        rc2014_get_adapter_config();
+        break;
     // case FUJICMD_NEW_DISK:
     //     rs232_ack();
     //     rs232_new_disk();
