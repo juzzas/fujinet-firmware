@@ -7,8 +7,12 @@
 
 #include "../../include/debug.h"
 
+#include "fnConfig.h"
 #include "fnSystem.h"
+
 #include "led.h"
+#include "modem.h" 
+
 
 uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
 {
@@ -20,10 +24,37 @@ uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
     return checksum;
 }
 
+static    int flow_count = 0;
 
 void virtualDevice::rc2014_send(uint8_t b)
 {
-    fnUartSIO.write(b);
+
+    while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW) {
+        fnSystem.yield();
+    }
+
+     if (flow_count > 8) {
+        fnSystem.delay(10);
+        flow_count = 0;
+     }
+
+     fnUartSIO.write(b);
+     flow_count++;
+}
+
+void virtualDevice::rc2014_send_string(const std::string& str)
+{
+    while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW) {
+        fnSystem.yield();
+    }
+    for (auto& c: str) {
+        rc2014_send(c);
+    }
+}
+
+void virtualDevice::rc2014_send_int(const int i)
+{
+    rc2014_send_string(std::to_string(i));
 }
 
 void virtualDevice::rc2014_flush()
@@ -32,19 +63,19 @@ void virtualDevice::rc2014_flush()
 }
 
 
-void virtualDevice::rc2014_send_buffer(uint8_t *buf, unsigned short len)
+size_t virtualDevice::rc2014_send_buffer(const uint8_t *buf, unsigned short len)
 {
-    for (int i = 0; i < len; i++) {
-        Debug_printf("[%d]%02x ", i, buf[i]);
-
-        while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW)
-            fnSystem.yield();
-            
-        //usleep(100000);
-        fnUartSIO.write(buf[i]);
+    while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW) {
+        fnSystem.yield();
     }
-        Debug_printf("\n");
+
+    for (int i = 0; i < len; i++) {
+        rc2014_send(buf[i]);
+    }
+
+    return len;
 }
+
 
 uint8_t virtualDevice::rc2014_recv()
 {
@@ -52,6 +83,11 @@ uint8_t virtualDevice::rc2014_recv()
         fnSystem.yield();
 
     return fnUartSIO.read();
+}
+
+int virtualDevice::rc2014_recv_available()
+{
+    return fnUartSIO.available();
 }
 
 bool virtualDevice::rc2014_recv_timeout(uint8_t *b, uint64_t dur)
@@ -240,7 +276,7 @@ void systemBus::service()
 #if 0
     if (_cpmDev != nullptr && _cpmDev->cpmActive)
     {
-        _cpmDev->rs232_handle_cpm();
+        _cpmDev->rc2014_handle_cpm();
         return; // break!
     }    
 #endif
@@ -250,13 +286,11 @@ void systemBus::service()
         Debug_println("RC2014 CMD low");
         _rc2014_process_cmd();
     }
-#if 0
     // Go check if the modem needs to read data if it's active
     else if (_modemDev != nullptr && _modemDev->modemActive && Config.get_modem_enabled())
     {
-        _modemDev->rs232_handle_modem();
+        _modemDev->rc2014_handle_modem();
     }
-#endif
     else
     // Neither CMD nor active modem, so throw out any stray input data
     {
@@ -314,7 +348,16 @@ void systemBus::addDevice(virtualDevice *pDevice, uint8_t device_id)
     case RC2014_DEVICEID_FUJINET:
         _fujiDev = (rc2014Fuji *)pDevice;
         break;
+    case RC2014_DEVICEID_MODEM:
+        _modemDev = (rc2014Modem *)pDevice;
+        break;
+    case RC2014_DEVICEID_CPM:
+        _cpmDev = (rc2014CPM *)pDevice;
+        break;
+
     }
+
+    
 }
 
 bool systemBus::deviceExists(uint8_t device_id)

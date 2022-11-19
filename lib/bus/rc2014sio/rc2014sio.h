@@ -23,6 +23,11 @@
 #define RC2014_DEVICEID_FN_NETWORK 0x71
 #define RC2014_DEVICEID_FN_NETWORK_LAST 0x78
 
+#define RC2014_DEVICEID_MODEM 0x50
+
+#define RC2014_DEVICEID_CPM 0x5A
+
+
 #define rc2014_RESET_DEBOUNCE_PERIOD 100 // in ms
 
 union cmdFrame_t
@@ -44,6 +49,8 @@ union cmdFrame_t
 
 class systemBus;
 class rc2014Fuji;     // declare here so can reference it, but define in fuji.h
+class rc2014CPM;
+class rc2014Modem;
 class rc2014Printer;
 
 /**
@@ -65,9 +72,23 @@ protected:
     /**
      * @brief Send Byte to rc2014
      * @param b Byte to send via rc2014
-     * @return was byte sent?
+     * @return none
      */
     void rc2014_send(uint8_t b);
+
+    /**
+     * @brief Send string buffer to rc2014
+     * @param s String to send to rc2014
+     * @return none
+     */
+    void rc2014_send_string(const std::string& s);
+
+    /**
+     * @brief Send integer as string to rc2014
+     * @param s String to send to rc2014
+     * @return none
+     */
+    void rc2014_send_int(int i);
 
     /**
      * @brief Flush output to rc2014
@@ -80,13 +101,18 @@ protected:
      * @param len Length of buffer
      * @return number of bytes sent.
      */
-    void rc2014_send_buffer(uint8_t *buf, unsigned short len);
+    size_t rc2014_send_buffer(const uint8_t *buf, unsigned short len);
 
     /**
      * @brief Receive byte from rc2014
      * @return byte received
      */
     uint8_t rc2014_recv();
+
+    /** 
+     * How many bytes available?
+    */
+    int rc2014_recv_available();
 
     /**
      * @brief Receive byte from rc2014 with a timeout period
@@ -217,8 +243,11 @@ class systemBus
 private:
     std::map<uint8_t, virtualDevice *> _daisyChain;
     virtualDevice *_activeDev = nullptr;
+    rc2014CPM *_cpmDev = nullptr;
     rc2014Fuji *_fujiDev = nullptr;
+    rc2014Modem *_modemDev = nullptr;
     rc2014Printer *_printerDev = nullptr;
+
 
     void _rc2014_process_cmd();
     void _rc2014_process_queue();

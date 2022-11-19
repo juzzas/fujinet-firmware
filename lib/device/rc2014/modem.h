@@ -15,7 +15,7 @@
 #include "esp32sshclient.h"
 
 /* Keep strings under 40 characters, for the benefit of 40-column users! */
-#define HELPL01 "       FujiNet Virtual rc2014 Modem"
+#define HELPL01 "       FujiNet Virtual RC2014 Modem"
 #define HELPL02 "======================================="
 #define HELPL03 ""
 #define HELPL04 "ATWIFILIST        | List avail networks"
@@ -38,8 +38,8 @@
 #define HELPL21 "ATTERMDUMB        | Set TERM to DUMB"
 #define HELPL22 "ATTERMANSI        | Set TERM to ANSI"
 #define HELPL23 "ATCPM             | Go into CP/M"
-#define HELPL24 "ATPHONEBOOKLIST   | List Phonebook"
-#define HELPL25 "ATPHONEBOOKCLR    | Clear Phonebook"
+#define HELPL24 "ATPBLIST          | List Phonebook"
+#define HELPL25 "ATPBCLEAR         | Clear Phonebook"
 #define HELPL26 "ATPB<num>=<host>  | Add to Phonebook"
 
 /* Not explicitly mentioned at this time, since they are commonly known:
@@ -216,8 +216,8 @@ protected:
 
 public:
 
-    bool modemActive = false; // If we are in modem mode or not
-    void sio_handle_modem();  // Handle incoming & outgoing data for modem
+    bool modemActive = true; //false; // If we are in modem mode or not
+    void rc2014_handle_modem();  // Handle incoming & outgoing data for modem
 
     rc2014Modem(FileSystem *_fs, bool snifferEnable);
     virtual ~rc2014Modem();
@@ -229,6 +229,8 @@ public:
     void set_do_echo(bool _do_echo) { do_echo = _do_echo; }
     std::string get_term_type() {return term_type; }
     void set_term_type(std::string _term_type) { term_type = _term_type; }
+
+    void telnet_event_handler(telnet_t *telnet, telnet_event_t *ev);
 
 };
 

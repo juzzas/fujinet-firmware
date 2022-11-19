@@ -1010,6 +1010,9 @@ void rc2014Fuji::setup(systemBus *siobus)
     theNetwork = new rc2014Network();
     _rc2014_bus->addDevice(theNetwork, RC2014_DEVICEID_FN_NETWORK); // temporary.
     _rc2014_bus->addDevice(&theFuji, RC2014_DEVICEID_FUJINET);   // Fuji becomes the gateway device.
+  //  _rc2014_bus->addDevice(&_fnModem, RC2014_DEVICEID_MODEM);
+  //  _rc2014_bus->addDevice(&_fnCpm, RC2014_DEVICEID_CPM);
+
 
     // Add our devices to the rc2014 bus
     // for (int i = 0; i < 4; i++)

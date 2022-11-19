@@ -34,26 +34,24 @@ static const telnet_telopt_t telopts[] = {
 /**
  * Event handler for libtelnet
  */
-static void _telnet_event_handler(telnet_t *telnet, telnet_event_t *ev, void *user_data)
+void rc2014Modem::telnet_event_handler(telnet_t *telnet, telnet_event_t *ev)
 {
-    rc2014Modem *modem = (rc2014Modem *)user_data; // somehow it thinks this is unused?
-
     switch (ev->type)
     {
     case TELNET_EV_DATA:
-        if (ev->data.size && fnUartSIO.write((uint8_t *)ev->data.buffer, ev->data.size) != ev->data.size)
+        if (ev->data.size && rc2014_send_buffer((uint8_t *)ev->data.buffer, ev->data.size) != ev->data.size)
             Debug_printf("_telnet_event_handler(%d) - Could not write complete buffer to SIO.\n", ev->type);
         break;
     case TELNET_EV_SEND:
-        modem->get_tcp_client().write((uint8_t *)ev->data.buffer, ev->data.size);
+        get_tcp_client().write((uint8_t *)ev->data.buffer, ev->data.size);
         break;
     case TELNET_EV_WILL:
         if (ev->neg.telopt == TELNET_TELOPT_ECHO)
-            modem->set_do_echo(false);
+            set_do_echo(false);
         break;
     case TELNET_EV_WONT:
         if (ev->neg.telopt == TELNET_TELOPT_ECHO)
-            modem->set_do_echo(true);
+            set_do_echo(true);
         break;
     case TELNET_EV_DO:
         break;
@@ -61,7 +59,7 @@ static void _telnet_event_handler(telnet_t *telnet, telnet_event_t *ev, void *us
         break;
     case TELNET_EV_TTYPE:
         if (ev->ttype.cmd == TELNET_TTYPE_SEND)
-            telnet_ttype_is(telnet, modem->get_term_type().c_str());
+            telnet_ttype_is(telnet, get_term_type().c_str());
         break;
     case TELNET_EV_SUBNEGOTIATION:
         break;
@@ -73,6 +71,15 @@ static void _telnet_event_handler(telnet_t *telnet, telnet_event_t *ev, void *us
         break;
     }
 }
+
+
+static void _telnet_event_handler(telnet_t *telnet, telnet_event_t *ev, void *user_data)
+{
+    rc2014Modem *modem = (rc2014Modem *)user_data; // somehow it thinks this is unused?
+
+    modem->telnet_event_handler(telnet, ev);    
+}
+
 
 rc2014Modem::rc2014Modem(FileSystem *_fs, bool snifferEnable)
 {
@@ -127,7 +134,7 @@ void rc2014Modem::at_connect_resultCode(int modemBaud)
         resultCode = 1;
         break;
     }
-    fnUartSIO.print(resultCode);
+    rc2014_send_int(resultCode);
     fnUartSIO.write(ASCII_CR);
 }
 
@@ -137,9 +144,9 @@ void rc2014Modem::at_connect_resultCode(int modemBaud)
  */
 void rc2014Modem::at_cmd_resultCode(int resultCode)
 {
-    fnUartSIO.print(resultCode);
-    fnUartSIO.write(ASCII_CR);
-    fnUartSIO.write(ASCII_LF);
+    rc2014_send_int(resultCode);
+    rc2014_send(ASCII_CR);
+    rc2014_send(ASCII_LF);
 }
 
 /**
@@ -150,16 +157,9 @@ void rc2014Modem::at_cmd_println()
     if (cmdOutput == false)
         return;
 
-    if (cmdAtascii == true)
-    {
-        fnUartSIO.write(ATASCII_EOL);
-    }
-    else
-    {
-        fnUartSIO.write(ASCII_CR);
-        fnUartSIO.write(ASCII_LF);
-    }
-    fnUartSIO.flush();
+    rc2014_send(ASCII_CR);
+    rc2014_send(ASCII_LF);
+    rc2014_flush();
 }
 
 void rc2014Modem::at_cmd_println(const char *s, bool addEol)
@@ -167,20 +167,13 @@ void rc2014Modem::at_cmd_println(const char *s, bool addEol)
     if (cmdOutput == false)
         return;
 
-    fnUartSIO.print(s);
+    rc2014_send_string(s);
     if (addEol)
     {
-        if (cmdAtascii == true)
-        {
-            fnUartSIO.write(ATASCII_EOL);
-        }
-        else
-        {
-            fnUartSIO.write(ASCII_CR);
-            fnUartSIO.write(ASCII_LF);
-        }
+        rc2014_send(ASCII_CR);
+        rc2014_send(ASCII_LF);
     }
-    fnUartSIO.flush();
+    rc2014_flush();
 }
 
 void rc2014Modem::at_cmd_println(int i, bool addEol)
@@ -188,20 +181,13 @@ void rc2014Modem::at_cmd_println(int i, bool addEol)
     if (cmdOutput == false)
         return;
 
-    fnUartSIO.print(i);
+    rc2014_send_int(i);
     if (addEol)
     {
-        if (cmdAtascii == true)
-        {
-            fnUartSIO.write(ATASCII_EOL);
-        }
-        else
-        {
-            fnUartSIO.write(ASCII_CR);
-            fnUartSIO.write(ASCII_LF);
-        }
+        rc2014_send(ASCII_CR);
+        rc2014_send(ASCII_LF);
     }
-    fnUartSIO.flush();
+    rc2014_flush();
 }
 
 void rc2014Modem::at_cmd_println(std::string s, bool addEol)
@@ -209,20 +195,13 @@ void rc2014Modem::at_cmd_println(std::string s, bool addEol)
     if (cmdOutput == false)
         return;
 
-    fnUartSIO.print(s);
+    rc2014_send_string(s);
     if (addEol)
     {
-        if (cmdAtascii == true)
-        {
-            fnUartSIO.write(ATASCII_EOL);
-        }
-        else
-        {
-            fnUartSIO.write(ASCII_CR);
-            fnUartSIO.write(ASCII_LF);
-        }
+        rc2014_send(ASCII_CR);
+        rc2014_send(ASCII_LF);
     }
-    fnUartSIO.flush();
+    rc2014_flush();
 }
 
 void rc2014Modem::at_handle_wificonnect()
@@ -992,7 +971,7 @@ void rc2014Modem::modemCommand()
 /*
   Handle incoming & outgoing data for modem
 */
-void rc2014Modem::sio_handle_modem()
+void rc2014Modem::rc2014_handle_modem()
 {
     /**** AT command mode ****/
     if (cmdMode == true)
@@ -1036,14 +1015,8 @@ void rc2014Modem::sio_handle_modem()
             char chr = fnUartSIO.read();
 
             // Return, enter, new line, carriage return.. anything goes to end the command
-            if ((chr == ASCII_LF) || (chr == ASCII_CR) || (chr == ATASCII_EOL))
+            if ((chr == ASCII_LF) || (chr == ASCII_CR))
             {
-                // flip which EOL to display based on last CR or EOL received.
-                if (chr == ATASCII_EOL)
-                    cmdAtascii = true;
-                else
-                    cmdAtascii = false;
-
                 modemCommand();
             }
             // Backspace or delete deletes previous character
@@ -1058,22 +1031,10 @@ void rc2014Modem::sio_handle_modem()
                     // Clear with a space
                     if (commandEcho == true)
                     {
-                        fnUartSIO.write(ASCII_BACKSPACE);
-                        fnUartSIO.write(' ');
-                        fnUartSIO.write(ASCII_BACKSPACE);
+                        rc2014_send(ASCII_BACKSPACE);
+                        rc2014_send(' ');
+                        rc2014_send(ASCII_BACKSPACE);
                     }
-                }
-            }
-            else if (chr == ATASCII_BACKSPACE)
-            {
-                size_t len = cmd.length();
-
-                // ATASCII backspace
-                if (len > 0)
-                {
-                    cmd.erase(len - 1);
-                    if (commandEcho == true)
-                        fnUartSIO.write(ATASCII_BACKSPACE);
                 }
             }
             // Take into account arrow key movement and clear screen
@@ -1081,7 +1042,7 @@ void rc2014Modem::sio_handle_modem()
                      ((chr >= ATASCII_CURSOR_UP) && (chr <= ATASCII_CURSOR_RIGHT)))
             {
                 if (commandEcho == true)
-                    fnUartSIO.write(chr);
+                    rc2014_send(chr);
             }
             else
             {
@@ -1091,7 +1052,7 @@ void rc2014Modem::sio_handle_modem()
                     cmd += chr;
                 }
                 if (commandEcho == true)
-                    fnUartSIO.write(chr);
+                    rc2014_send(chr);
             }
         }
     }
@@ -1123,7 +1084,8 @@ void rc2014Modem::sio_handle_modem()
         }
 
         //int sioBytesAvail = SIO_UART.available();
-        int sioBytesAvail = min(0, fnUartSIO.available());
+        int sioBytesAvail = rc2014_recv_available();
+        //Debug_printf("connected modem avail = %d\n", sioBytesAvail);
 
         // send from Atari to Fujinet
         if (sioBytesAvail && tcpClient.connected())
@@ -1138,8 +1100,9 @@ void rc2014Modem::sio_handle_modem()
 
             // Read from serial, the amount available up to
             // maximum size of the buffer
-            int sioBytesRead = fnUartSIO.readBytes(&txBuf[0], //SIO_UART.readBytes(&txBuf[0],
+            int sioBytesRead = rc2014_recv_buffer(&txBuf[0], //SIO_UART.readBytes(&txBuf[0],
                                                    (sioBytesAvail > TX_BUF_SIZE) ? TX_BUF_SIZE : sioBytesAvail);
+            Debug_printf("connected modem read = %d\n", sioBytesRead);
 
             // Disconnect if going to AT mode with "+++" sequence
             for (int i = 0; i < (int)sioBytesRead; i++)
@@ -1188,8 +1151,8 @@ void rc2014Modem::sio_handle_modem()
             }
             else
             {
-                fnUartSIO.write(buf, bytesRead);
-                fnUartSIO.flush();
+                rc2014_send_buffer(buf, bytesRead);
+                rc2014_flush();
             }
 
             // And dump to sniffer, if enabled.
