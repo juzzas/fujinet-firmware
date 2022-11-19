@@ -24,8 +24,6 @@ uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
     return checksum;
 }
 
-static    int flow_count = 0;
-
 void virtualDevice::rc2014_send(uint8_t b)
 {
 
@@ -33,20 +31,12 @@ void virtualDevice::rc2014_send(uint8_t b)
         fnSystem.yield();
     }
 
-     if (flow_count > 8) {
-        fnSystem.delay(10);
-        flow_count = 0;
-     }
-
-     fnUartSIO.write(b);
-     flow_count++;
+    fnUartSIO.write(b);
+    fnUartSIO.flush();
 }
 
 void virtualDevice::rc2014_send_string(const std::string& str)
 {
-    while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW) {
-        fnSystem.yield();
-    }
     for (auto& c: str) {
         rc2014_send(c);
     }
@@ -65,10 +55,6 @@ void virtualDevice::rc2014_flush()
 
 size_t virtualDevice::rc2014_send_buffer(const uint8_t *buf, unsigned short len)
 {
-    while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW) {
-        fnSystem.yield();
-    }
-
     for (int i = 0; i < len; i++) {
         rc2014_send(buf[i]);
     }
