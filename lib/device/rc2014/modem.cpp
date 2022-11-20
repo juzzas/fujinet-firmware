@@ -1085,7 +1085,6 @@ void rc2014Modem::rc2014_handle_modem()
 
         //int sioBytesAvail = SIO_UART.available();
         int sioBytesAvail = rc2014_recv_available();
-        //Debug_printf("connected modem avail = %d\n", sioBytesAvail);
 
         // send from Atari to Fujinet
         if (sioBytesAvail && tcpClient.connected())
@@ -1102,7 +1101,6 @@ void rc2014Modem::rc2014_handle_modem()
             // maximum size of the buffer
             int sioBytesRead = rc2014_recv_buffer(&txBuf[0], //SIO_UART.readBytes(&txBuf[0],
                                                    (sioBytesAvail > TX_BUF_SIZE) ? TX_BUF_SIZE : sioBytesAvail);
-            Debug_printf("connected modem read = %d\n", sioBytesRead);
 
             // Disconnect if going to AT mode with "+++" sequence
             for (int i = 0; i < (int)sioBytesRead; i++)
