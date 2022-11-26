@@ -68,26 +68,23 @@ rc2014Network::~rc2014Network()
  * Called in response to 'O' command. Instantiate a protocol, pass URL to it, call its open
  * method. Also set up RX interrupt.
  */
-void rc2014Network::open(unsigned short s)
+void rc2014Network::open()
 {
-    uint8_t _aux1 = rc2014_recv();
-    uint8_t _aux2 = rc2014_recv();
+    Debug_printf("rc2014Network::open()\n");
+
     string d;
 
-    s--; s--;
-    
-    memset(response,0,sizeof(response));
-    rc2014_recv_buffer(response, s);
-    rc2014_recv(); // checksum
+    rc2014_response_ack();
 
+    memset(response,0,sizeof(response));
+    rc2014_recv_buffer(response, 256);
+    uint8_t ck = rc2014_recv(); // checksum
+
+    Debug_printf("rc2014Network::open url %s\n", response);
     
     rc2014_response_ack();
 
     channelMode = PROTOCOL;
-
-    // persist aux1/aux2 values
-    cmdFrame.aux1 = _aux1;
-    cmdFrame.aux2 = _aux2;
 
     open_aux1 = cmdFrame.aux1;
     open_aux2 = cmdFrame.aux2;
@@ -106,7 +103,7 @@ void rc2014Network::open(unsigned short s)
     Debug_printf("open()\n");
 
     // Parse and instantiate protocol
-    d=string((char *)response,s);
+    d=string((char *)response,256);
     parse_and_instantiate_protocol(d);
 
     if (protocol == nullptr)
@@ -123,6 +120,9 @@ void rc2014Network::open(unsigned short s)
         protocol = nullptr;
         return;
     }
+
+    rc2014_send_complete();
+
 }
 
 /**
@@ -133,9 +133,6 @@ void rc2014Network::close()
 {
     Debug_printf("rc2014Network::close()\n");
 
-    rc2014_recv(); // CK
-
-    
     rc2014_response_ack();
 
     statusByte.byte = 0x00;
@@ -181,9 +178,13 @@ bool rc2014Network::read_channel(unsigned short num_bytes)
  * Write # of bytes specified by aux1/aux2 from tx_buffer out to rc2014. If protocol is unable to return requested
  * number of bytes, return ERROR.
  */
-void rc2014Network::write(uint16_t num_bytes)
+void rc2014Network::write()
 {
+    Debug_printf("rc2014Network::write()\n");
+
     memset(response, 0, sizeof(response));
+
+    uint16_t num_bytes = (cmdFrame.aux2 << 8) + cmdFrame.aux1;
 
     rc2014_recv_buffer(response, num_bytes);
     rc2014_recv(); // CK
@@ -193,6 +194,27 @@ void rc2014Network::write(uint16_t num_bytes)
 
     *transmitBuffer += string((char *)response, num_bytes);
     err = rc2014Network_write_channel(num_bytes);
+}
+
+void rc2014Network::read()
+{
+    Debug_printf("rc2014Network::write()\n");
+
+    rc2014_response_ack();
+
+    uint16_t num_bytes = (cmdFrame.aux2 << 8) + cmdFrame.aux1;
+
+    // todo: do read_channel
+
+    // Move into response.
+    memcpy(response, receiveBuffer, sizeof(num_bytes));
+    response_len = num_bytes;
+
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+
+    rc2014_send_complete();
 }
 
 /**
@@ -224,8 +246,9 @@ bool rc2014Network::rc2014Network_write_channel(unsigned short num_bytes)
  */
 void rc2014Network::status()
 {
+    Debug_printf("rc2014Network::status()\n");
+
     NetworkStatus s;
-    rc2014_recv(); // CK
     
     rc2014_response_ack();
 
@@ -245,6 +268,12 @@ void rc2014Network::status()
     response[3] = s.error;
     response_len = 4;
     receiveMode = STATUS;
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
+
 }
 
 /**
@@ -638,52 +667,52 @@ void rc2014Network::rc2014_control_ack()
 {
 }
 
-void rc2014Network::rc2014_control_send()
-{
-    uint16_t s = rc2014_recv_length(); // receive length
-    uint8_t c = rc2014_recv();        // receive command
+// void rc2014Network::rc2014_control_send()
+// {
+//     uint16_t s = rc2014_recv_length(); // receive length
+//     uint8_t c = rc2014_recv();        // receive command
 
-    s--; // Because we've popped the command off the stack
+//     s--; // Because we've popped the command off the stack
 
-    switch (c)
-    {
-    case ' ':
-        rename(s);
-        break;
-    case '!':
-        del(s);
-        break;
-    case '*':
-        mkdir(s);
-        break;
-    case ',':
-        set_prefix(s);
-        break;
-    case '0':
-        get_prefix();
-        break;
-    case 'O':
-        open(s);
-        break;
-    case 'C':
-        close();
-        break;
-    case 'S':
-        status();
-        break;
-    case 'W':
-        write(s);
-        break;
-    case 0xFD: // login
-        set_login(s);
-        break;
-    case 0xFE: // password
-        set_password(s);
-        break;
-    default:
-        Debug_printf("rc2014_control_send() - Unknown Command: %02x\n", c);
-    }
-}
+//     switch (c)
+//     {
+//     case ' ':
+//         rename(s);
+//         break;
+//     case '!':
+//         del(s);
+//         break;
+//     case '*':
+//         mkdir(s);
+//         break;
+//     case ',':
+//         set_prefix(s);
+//         break;
+//     case '0':
+//         get_prefix();
+//         break;
+//     case 'O':
+//         open();
+//         break;
+//     case 'C':
+//         close();
+//         break;
+//     case 'S':
+//         status();
+//         break;
+//     case 'W':
+//         write(s);
+//         break;
+//     case 0xFD: // login
+//         set_login(s);
+//         break;
+//     case 0xFE: // password
+//         set_password(s);
+//         break;
+//     default:
+//         Debug_printf("rc2014_control_send() - Unknown Command: %02x\n", c);
+//     }
+// }
 
 void rc2014Network::rc2014_control_clr()
 {
@@ -779,7 +808,27 @@ void rc2014Network::rc2014_process(uint32_t commanddata, uint8_t checksum)
     cmdFrame.commanddata = commanddata;
     cmdFrame.checksum = checksum;
 
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
+    switch (cmdFrame.comnd)
+    {
+    case 'O':
+        open();
+        break;
+    // case 'C':
+    //     close();
+    //     break;
+    // case 'R':
+    //     read();
+    //     break;
+    // case 'W':
+    //     write();
+    //     break;
+    case 'S':
+        status();
+        break;
+    default:
+        Debug_printf("rc2014 network: unimplemented command: 0x%02x", cmdFrame.comnd);
+
+    }
 }
 
 /** PRIVATE METHODS ************************************************************/

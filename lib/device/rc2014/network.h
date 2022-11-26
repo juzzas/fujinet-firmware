@@ -53,7 +53,7 @@ public:
      * Called for rc2014 Command 'O' to open a connection to a network protocol, allocate all buffers,
      * and start the receive PROCEED interrupt.
      */
-    virtual void open(unsigned short s);
+    virtual void open();
 
     /**
      * Called for rc2014 Command 'C' to close a connection to a network protocol, de-allocate all buffers,
@@ -67,7 +67,9 @@ public:
      * Write # of bytes specified by aux1/aux2 from tx_buffer out to rc2014. If protocol is unable to return requested
      * number of bytes, return ERROR.
      */
-    virtual void write(uint16_t num_bytes);
+    virtual void write();
+
+    virtual void read();
 
     /**
      * rc2014 Status Command. First try to populate NetworkStatus object from protocol. If protocol not instantiated,
@@ -88,7 +90,7 @@ public:
     virtual void rc2014_control_clr();
     virtual void rc2014_control_receive();
     virtual void rc2014_control_receive_channel();
-    virtual void rc2014_control_send();
+    //virtual void rc2014_control_send();
 
     virtual void rc2014_response_status();
     virtual void rc2014_response_send();
