@@ -98,7 +98,7 @@ void rc2014Network::open()
     }
 
     // Reset status buffer
-    statusByte.byte = 0x00;
+    network_status.reset();
 
     Debug_printf("open()\n");
 
@@ -114,7 +114,7 @@ void rc2014Network::open()
     // Attempt protocol open
     if (protocol->open(urlParser, &cmdFrame) == true)
     {
-        statusByte.bits.client_error = true;
+        network_status.error = protocol->error;
         Debug_printf("Protocol unable to make connection. Error: %d\n", err);
         delete protocol;
         protocol = nullptr;
@@ -135,7 +135,7 @@ void rc2014Network::close()
 
     rc2014_response_ack();
 
-    statusByte.byte = 0x00;
+    network_status.reset();
 
     // If no protocol enabled, we just signal complete, and return.
     if (protocol == nullptr)
@@ -198,21 +198,38 @@ void rc2014Network::write()
 
 void rc2014Network::read()
 {
-    Debug_printf("rc2014Network::write()\n");
+    Debug_printf("rc2014Network::read()\n");
+
+    uint16_t num_bytes = (cmdFrame.aux2 << 8) + cmdFrame.aux1;
+    Debug_printf("rc2014Network::read %u bytes\n", num_bytes);
+
 
     rc2014_response_ack();
 
-    uint16_t num_bytes = (cmdFrame.aux2 << 8) + cmdFrame.aux1;
+    // Check for rx buffer. If NULL, then tell caller we could not allocate buffers.
+    if (receiveBuffer == nullptr)
+    {
+        network_status.error = NETWORK_ERROR_COULD_NOT_ALLOCATE_BUFFERS;
+        rc2014_send_error();
+        return;
+    }
 
-    // todo: do read_channel
+    // If protocol isn't connected, then return not connected.
+    if (protocol == nullptr)
+    {
+        network_status.error = NETWORK_ERROR_COULD_NOT_ALLOCATE_BUFFERS;
+        rc2014_send_error();
+        return;
+    }
 
-    // Move into response.
-    memcpy(response, receiveBuffer, sizeof(num_bytes));
-    response_len = num_bytes;
+    // Do the channel read
+    err = read_channel(num_bytes);
 
+    rc2014_send_buffer((uint8_t *)receiveBuffer->data(), num_bytes);
+    rc2014_send(rc2014_checksum((uint8_t *)receiveBuffer->data(), num_bytes));
+    receiveBuffer->erase(0, num_bytes);
 
-    rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    Debug_printf("rc2014Network::read sent %u bytes\n", num_bytes);
 
     rc2014_send_complete();
 }
@@ -267,7 +284,7 @@ void rc2014Network::status()
     response[2] = s.connected;
     response[3] = s.error;
     response_len = 4;
-    receiveMode = STATUS;
+    //receiveMode = STATUS;
 
     rc2014_send_buffer(response, response_len);
     rc2014_send(rc2014_checksum(response, response_len));
@@ -408,7 +425,7 @@ void rc2014Network::del(uint16_t s)
 
     if (protocol->perform_idempotent_80(urlParser, &cmdFrame))
     {
-        statusByte.bits.client_error = true;
+        network_status.error = protocol->error;
         return;
     }
 }
@@ -431,7 +448,7 @@ void rc2014Network::rename(uint16_t s)
 
     if (protocol->perform_idempotent_80(urlParser, &cmdFrame))
     {
-        statusByte.bits.client_error = true;
+        network_status.error = protocol->error;
         return;
     }
 }
@@ -454,349 +471,12 @@ void rc2014Network::mkdir(uint16_t s)
 
     if (protocol->perform_idempotent_80(urlParser, &cmdFrame))
     {
-        statusByte.bits.client_error = true;
+        network_status.error = protocol->error;
         return;
     }
 }
 
-/**
- * rc2014 Special, called as a default for any other rc2014 command not processed by the other rc2014_ functions.
- * First, the protocol is asked whether it wants to process the command, and if so, the protocol will
- * process the special command. Otherwise, the command is handled locally. In either case, either rc2014_complete()
- * or rc2014_error() is called.
- */
-void rc2014Network::rc2014Network_special()
-{
-    // do_inquiry(cmdFrame.comnd);
 
-    // switch (inq_dstats)
-    // {
-    // case 0x00: // No payload
-    //     rc2014_ack();
-    //     rc2014_special_00();
-    //     break;
-    // case 0x40: // Payload to Atari
-    //     rc2014_ack();
-    //     rc2014_special_40();
-    //     break;
-    // case 0x80: // Payload to Peripheral
-    //     rc2014_ack();
-    //     rc2014_special_80();
-    //     break;
-    // default:
-    //     rc2014_nak();
-    //     break;
-    // }
-}
-
-/**
- * @brief Do an inquiry to determine whether a protoocol supports a particular command.
- * The protocol will either return $00 - No Payload, $40 - Atari Read, $80 - Atari Write,
- * or $FF - Command not supported, which should then be used as a DSTATS value by the
- * Atari when making the N: rc2014 call.
- */
-void rc2014Network::rc2014Network_special_inquiry()
-{
-    // // Acknowledge
-    // rc2014_ack();
-
-    // Debug_printf("rc2014Network::rc2014_special_inquiry(%02x)\n", cmdFrame.aux1);
-
-    // do_inquiry(cmdFrame.aux1);
-
-    // // Finally, return the completed inq_dstats value back to Atari
-    // bus_to_computer(&inq_dstats, sizeof(inq_dstats), false); // never errors.
-}
-
-void rc2014Network::do_inquiry(unsigned char inq_cmd)
-{
-    // // Reset inq_dstats
-    // inq_dstats = 0xff;
-
-    // // Ask protocol for dstats, otherwise get it locally.
-    // if (protocol != nullptr)
-    //     inq_dstats = protocol->special_inquiry(inq_cmd);
-
-    // // If we didn't get one from protocol, or unsupported, see if supported globally.
-    // if (inq_dstats == 0xFF)
-    // {
-    //     switch (inq_cmd)
-    //     {
-    //     case 0x20:
-    //     case 0x21:
-    //     case 0x23:
-    //     case 0x24:
-    //     case 0x2A:
-    //     case 0x2B:
-    //     case 0x2C:
-    //     case 0xFD:
-    //     case 0xFE:
-    //         inq_dstats = 0x80;
-    //         break;
-    //     case 0x30:
-    //         inq_dstats = 0x40;
-    //         break;
-    //     case 'Z': // Set interrupt rate
-    //         inq_dstats = 0x00;
-    //         break;
-    //     case 'T': // Set Translation
-    //         inq_dstats = 0x00;
-    //         break;
-    //     case 0x80: // JSON Parse
-    //         inq_dstats = 0x00;
-    //         break;
-    //     case 0x81: // JSON Query
-    //         inq_dstats = 0x80;
-    //         break;
-    //     default:
-    //         inq_dstats = 0xFF; // not supported
-    //         break;
-    //     }
-    // }
-
-    // Debug_printf("inq_dstats = %u\n", inq_dstats);
-}
-
-/**
- * @brief called to handle special protocol interactions when DSTATS=$00, meaning there is no payload.
- * Essentially, call the protocol action
- * and based on the return, signal rc2014_complete() or error().
- */
-void rc2014Network::rc2014Network_special_00()
-{
-    // // Handle commands that exist outside of an open channel.
-    // switch (cmdFrame.comnd)
-    // {
-    // case 'T':
-    //     rc2014_set_translation();
-    //     break;
-    // case 'Z':
-    //     rc2014_set_timer_rate();
-    //     break;
-    // default:
-    //     if (protocol->special_00(&cmdFrame) == false)
-    //         rc2014_complete();
-    //     else
-    //         rc2014_error();
-    // }
-}
-
-/**
- * @brief called to handle protocol interactions when DSTATS=$40, meaning the payload is to go from
- * the peripheral back to the ATARI. Essentially, call the protocol action with the accrued special
- * buffer (containing the devicespec) and based on the return, use bus_to_computer() to transfer the
- * resulting data. Currently this is assumed to be a fixed 256 byte buffer.
- */
-void rc2014Network::rc2014Network_special_40()
-{
-    // // Handle commands that exist outside of an open channel.
-    // switch (cmdFrame.comnd)
-    // {
-    // case 0x30:
-    //     rc2014_get_prefix();
-    //     return;
-    // }
-
-    // bus_to_computer((uint8_t *)receiveBuffer->data(),
-    //                 SPECIAL_BUFFER_SIZE,
-    //                 protocol->special_40((uint8_t *)receiveBuffer->data(), SPECIAL_BUFFER_SIZE, &cmdFrame));
-}
-
-/**
- * @brief called to handle protocol interactions when DSTATS=$80, meaning the payload is to go from
- * the ATARI to the pheripheral. Essentially, call the protocol action with the accrued special
- * buffer (containing the devicespec) and based on the return, use bus_to_peripheral() to transfer the
- * resulting data. Currently this is assumed to be a fixed 256 byte buffer.
- */
-void rc2014Network::rc2014Network_special_80()
-{
-    // uint8_t spData[SPECIAL_BUFFER_SIZE];
-
-    // // Handle commands that exist outside of an open channel.
-    // switch (cmdFrame.comnd)
-    // {
-    // case 0x20: // RENAME
-    // case 0x21: // DELETE
-    // case 0x23: // LOCK
-    // case 0x24: // UNLOCK
-    // case 0x2A: // MKDIR
-    // case 0x2B: // RMDIR
-    //     rc2014_do_idempotent_command_80();
-    //     return;
-    // case 0x2C: // CHDIR
-    //     rc2014_set_prefix();
-    //     return;
-    // case 0xFD: // LOGIN
-    //     rc2014_set_login();
-    //     return;
-    // case 0xFE: // PASSWORD
-    //     rc2014_set_password();
-    //     return;
-    // }
-
-    // memset(spData, 0, SPECIAL_BUFFER_SIZE);
-
-    // // Get special (devicespec) from computer
-    // bus_to_peripheral(spData, SPECIAL_BUFFER_SIZE);
-
-    // Debug_printf("rc2014Network::rc2014_special_80() - %s\n", spData);
-
-    // // Do protocol action and return
-    // if (protocol->special_80(spData, SPECIAL_BUFFER_SIZE, &cmdFrame) == false)
-    //     rc2014_complete();
-    // else
-    //     rc2014_error();
-}
-
-void rc2014Network::rc2014_response_status()
-{
-    NetworkStatus s;
-
-    if (protocol != nullptr)
-        protocol->status(&s);
-
-    statusByte.bits.client_connected = s.connected == true;
-    statusByte.bits.client_data_available = s.rxBytesWaiting > 0;
-    statusByte.bits.client_error = s.error > 1;
-
-    status_response[4] = statusByte.byte;
-    virtualDevice::rc2014_response_status();
-}
-
-void rc2014Network::rc2014_control_ack()
-{
-}
-
-// void rc2014Network::rc2014_control_send()
-// {
-//     uint16_t s = rc2014_recv_length(); // receive length
-//     uint8_t c = rc2014_recv();        // receive command
-
-//     s--; // Because we've popped the command off the stack
-
-//     switch (c)
-//     {
-//     case ' ':
-//         rename(s);
-//         break;
-//     case '!':
-//         del(s);
-//         break;
-//     case '*':
-//         mkdir(s);
-//         break;
-//     case ',':
-//         set_prefix(s);
-//         break;
-//     case '0':
-//         get_prefix();
-//         break;
-//     case 'O':
-//         open();
-//         break;
-//     case 'C':
-//         close();
-//         break;
-//     case 'S':
-//         status();
-//         break;
-//     case 'W':
-//         write(s);
-//         break;
-//     case 0xFD: // login
-//         set_login(s);
-//         break;
-//     case 0xFE: // password
-//         set_password(s);
-//         break;
-//     default:
-//         Debug_printf("rc2014_control_send() - Unknown Command: %02x\n", c);
-//     }
-// }
-
-void rc2014Network::rc2014_control_clr()
-{
-    rc2014_response_send();
-}
-
-void rc2014Network::rc2014_control_receive_channel()
-{
-    NetworkStatus ns;
-
-    if ((protocol == nullptr) || (receiveBuffer == nullptr))
-        return; // Punch out.
-
-    // Get status
-    protocol->status(&ns);
-
-    if (ns.rxBytesWaiting > 0)
-        rc2014_response_ack();
-    else
-    {
-        rc2014_response_nack();
-        return;
-    }
-
-    // Truncate bytes waiting to response size
-    ns.rxBytesWaiting = (ns.rxBytesWaiting > 1024) ? 1024 : ns.rxBytesWaiting;
-    response_len = ns.rxBytesWaiting;
-
-    if (protocol->read(response_len)) // protocol adapter returned error
-    {
-        statusByte.bits.client_error = true;
-        err = protocol->error;
-        return;
-    }
-    else // everything ok
-    {
-        statusByte.bits.client_error = 0;
-        statusByte.bits.client_data_available = response_len > 0;
-        memcpy(response, receiveBuffer->data(), response_len);
-        for (int i = 0; i < response_len; i++)
-        {
-            Debug_printf("%c", response[i]);
-        }
-        receiveBuffer->erase(0, response_len);
-    }
-}
-
-void rc2014Network::rc2014_control_receive()
-{
-    
-
-    if (response_len > 0) // There is response data, go ahead and ack.
-    {
-        rc2014_response_ack();
-        return;
-    }
-    else if (protocol == nullptr)
-    {
-        rc2014_response_nack();
-        return;
-    }
-
-    switch (receiveMode)
-    {
-    case CHANNEL:
-        rc2014_control_receive_channel();
-        break;
-    case STATUS:
-        break;
-    }
-}
-
-void rc2014Network::rc2014_response_send()
-{
-    uint8_t c = rc2014_checksum(response, response_len);
-
-    rc2014_send(0xB0 | _devnum);
-    rc2014_send_length(response_len);
-    rc2014_send_buffer(response, response_len);
-    rc2014_send(c);
-
-    memset(response, 0, response_len);
-    response_len = 0;
-}
 
 /**
  * Process incoming rc2014 command
@@ -816,9 +496,9 @@ void rc2014Network::rc2014_process(uint32_t commanddata, uint8_t checksum)
     // case 'C':
     //     close();
     //     break;
-    // case 'R':
-    //     read();
-    //     break;
+    case 'R':
+        read();
+        break;
     // case 'W':
     //     write();
     //     break;

@@ -76,24 +76,7 @@ public:
      * or Protocol does not want to fill status buffer (e.g. due to unknown aux1/aux2 values), then try to deal
      * with them locally. Then serialize resulting NetworkStatus object to rc2014.
      */
-    virtual void rc2014Network_special();
-
-    /**
-     * rc2014 Special, called as a default for any other rc2014 command not processed by the other rc2014net_ functions.
-     * First, the protocol is asked whether it wants to process the command, and if so, the protocol will
-     * process the special command. Otherwise, the command is handled locally. In either case, either rc2014net_complete()
-     * or rc2014net_error() is called.
-     */
     virtual void status();
-
-    virtual void rc2014_control_ack();
-    virtual void rc2014_control_clr();
-    virtual void rc2014_control_receive();
-    virtual void rc2014_control_receive_channel();
-    //virtual void rc2014_control_send();
-
-    virtual void rc2014_response_status();
-    virtual void rc2014_response_send();
 
     /**
      * @brief Called to set prefix
@@ -170,6 +153,7 @@ private:
     /**
      * Network Status object
      */
+    NetworkStatus network_status;
     union _status
     {
         struct _statusbits

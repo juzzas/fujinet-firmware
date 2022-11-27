@@ -56,8 +56,10 @@ void virtualDevice::rc2014_flush()
 size_t virtualDevice::rc2014_send_buffer(const uint8_t *buf, unsigned short len)
 {
     for (int i = 0; i < len; i++) {
+        Debug_printf("[0x%02x] ", buf[i]);
         rc2014_send(buf[i]);
     }
+        Debug_printf("\n");
 
     return len;
 }
