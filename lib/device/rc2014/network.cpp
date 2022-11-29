@@ -183,17 +183,20 @@ void rc2014Network::write()
     Debug_printf("rc2014Network::write()\n");
 
     memset(response, 0, sizeof(response));
+    rc2014_response_ack();
 
     uint16_t num_bytes = (cmdFrame.aux2 << 8) + cmdFrame.aux1;
 
     rc2014_recv_buffer(response, num_bytes);
     rc2014_recv(); // CK
 
-    
     rc2014_response_ack();
+    
 
     *transmitBuffer += string((char *)response, num_bytes);
     err = rc2014Network_write_channel(num_bytes);
+
+    rc2014_send_complete();
 }
 
 void rc2014Network::read()
@@ -499,9 +502,9 @@ void rc2014Network::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case 'R':
         read();
         break;
-    // case 'W':
-    //     write();
-    //     break;
+    case 'W':
+        write();
+        break;
     case 'S':
         status();
         break;
@@ -698,26 +701,5 @@ void rc2014Network::rc2014Network_set_timer_rate()
     // rc2014_complete();
 }
 
-void rc2014Network::rc2014Network_do_idempotent_command_80()
-{
-    // rc2014_ack();
-
-    // parse_and_instantiate_protocol();
-
-    // if (protocol == nullptr)
-    // {
-    //     Debug_printf("Protocol = NULL\n");
-    //     rc2014_error();
-    //     return;
-    // }
-
-    // if (protocol->perform_idempotent_80(urlParser, &cmdFrame) == true)
-    // {
-    //     Debug_printf("perform_idempotent_80 failed\n");
-    //     rc2014_error();
-    // }
-    // else
-    //     rc2014_complete();
-}
 
 #endif /* NEW_TARGET */
