@@ -121,8 +121,9 @@ void rc2014Network::open()
         return;
     }
 
-    rc2014_send_complete();
+    json.setProtocol(protocol);
 
+    rc2014_send_complete();
 }
 
 /**
@@ -149,6 +150,22 @@ void rc2014Network::close()
     // Delete the protocol object
     delete protocol;
     protocol = nullptr;
+
+    rc2014_send_complete();
+}
+
+/**
+ * @brief Perform read of the current JSON channel
+ * @param num_bytes Number of bytes to read
+ */
+bool rc2014Network::read_channel_json(unsigned short num_bytes)
+{
+    if (num_bytes > json_bytes_remaining)
+        json_bytes_remaining=0;
+    else
+        json_bytes_remaining-=num_bytes;
+
+    return false;
 }
 
 /**
@@ -166,8 +183,7 @@ bool rc2014Network::read_channel(unsigned short num_bytes)
         _err = protocol->read(num_bytes);
         break;
     case JSON:
-        Debug_printf("JSON Not Handled.\n");
-        _err = true;
+        err = read_channel_json(num_bytes);
         break;
     }
     return _err;
@@ -259,6 +275,14 @@ bool rc2014Network::rc2014Network_write_channel(unsigned short num_bytes)
     return err;
 }
 
+bool rc2014Network::rc2014Network_status_channel_json(NetworkStatus *ns)
+{
+    ns->connected = json_bytes_remaining > 0;
+    ns->error = json_bytes_remaining > 0 ? 1 : 136;
+    ns->rxBytesWaiting = json_bytes_remaining;
+    return false; // for now
+}
+
 /**
  * rc2014 Status Command. First try to populate NetworkStatus object from protocol. If protocol not instantiated,
  * or Protocol does not want to fill status buffer (e.g. due to unknown aux1/aux2 values), then try to deal
@@ -278,7 +302,7 @@ void rc2014Network::status()
         err = protocol->status(&s);
         break;
     case JSON:
-        // err = _json->status(&status);
+        err = rc2014Network_status_channel_json(&s);
         break;
     }
 
@@ -295,6 +319,81 @@ void rc2014Network::status()
     rc2014_send_complete();
 
 }
+
+/**
+ * JSON functionality
+ */
+void rc2014Network::rc2014_parse_json()
+{
+    Debug_printf("rc2014Network::parse_json()\n");
+
+    rc2014_response_ack();
+
+    json.parse();
+
+    rc2014_send_complete();
+}
+
+void rc2014Network::rc2014_set_json_query()
+{
+    uint8_t in[256];
+    const char *inp = NULL;
+    uint8_t *tmp;
+    Debug_printf("rc2014Network::set_json_query()\n");
+
+    memset(in, 0, sizeof(in));
+
+    rc2014_response_ack();
+
+    rc2014_recv_buffer(in, sizeof(in));
+    uint8_t ck = rc2014_recv(); // CK
+
+    rc2014_response_ack();
+
+    // strip away line endings from input spec.
+    for (int i = 0; i < 256; i++)
+    {
+        if (in[i] == 0x0A || in[i] == 0x0D || in[i] == 0x9b)
+            in[i] = 0x00;
+    }
+
+    inp = strrchr((const char *)in, ':');
+    Debug_printf("#1 %s\n",inp);
+    inp++;
+    json.setReadQuery(string(inp),cmdFrame.aux2);
+    json_bytes_remaining = json.readValueLen();
+    tmp = (uint8_t *)malloc(json.readValueLen());
+    json.readValue(tmp,json_bytes_remaining);
+    *receiveBuffer += string((const char *)tmp,json_bytes_remaining);
+    free(tmp);
+
+    Debug_printf("Query set to %s\n",inp);
+    rc2014_send_complete();
+}
+
+
+/**
+ * @brief set channel mode
+ */
+void rc2014Network::rc2014_set_channel_mode()
+{
+    rc2014_response_ack();
+
+    switch (cmdFrame.aux2)
+    {
+    case 0:
+        channelMode = PROTOCOL;
+        rc2014_send_complete();
+        break;
+    case 1:
+        channelMode = JSON;
+        rc2014_send_complete();
+        break;
+    default:
+        rc2014_send_error();
+    }
+}
+
 
 /**
  * Get Prefix
@@ -496,17 +595,28 @@ void rc2014Network::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case 'O':
         open();
         break;
-    // case 'C':
-    //     close();
-    //     break;
+    case 'C':
+        close();
+        break;
     case 'R':
         read();
         break;
     case 'W':
         write();
         break;
+    case 'P':
+        if (channelMode == JSON)
+            rc2014_parse_json();
+        break;
+    case 'Q':
+        if (channelMode == JSON)
+            rc2014_set_json_query();
+        break;
     case 'S':
         status();
+        break;
+    case 0xFC:
+        rc2014_set_channel_mode();
         break;
     default:
         Debug_printf("rc2014 network: unimplemented command: 0x%02x", cmdFrame.comnd);

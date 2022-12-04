@@ -10,6 +10,7 @@
 #include "EdUrlParser.h"
 
 #include "Protocol.h"
+#include "fnjson.h"
 
 
 /**
@@ -253,6 +254,16 @@ private:
     unsigned char errorSave = 1;
 
     /**
+     * The fnJSON parser wrapper object
+     */
+    FNJSON json;
+
+    /**
+     * Bytes sent of current JSON query object.
+     */
+    unsigned short json_bytes_remaining=0;
+
+    /**
      * Instantiate protocol object
      * @return bool TRUE if protocol successfully called open(), FALSE if protocol could not open
      */
@@ -303,6 +314,14 @@ private:
      */
     bool read_channel(unsigned short num_bytes);
 
+
+    /**
+     * @brief Perform read of the current JSON channel
+     * @param num_bytes Number of bytes to read
+     */
+    bool read_channel_json(unsigned short num_bytes);
+
+
     /**
      * Perform the correct write based on value of channelMode
      * @param num_bytes Number of bytes to write.
@@ -322,35 +341,26 @@ private:
     void rc2014Network_status_channel();
 
     /**
-     * @brief Do an inquiry to determine whether a protoocol supports a particular command.
-     * The protocol will either return $00 - No Payload, $40 - Atari Read, $80 - Atari Write,
-     * or $FF - Command not supported, which should then be used as a DSTATS value by the
-     * Atari when making the N: rc2014 call.
+     * @brief get JSON status (# of bytes in receive channel)
      */
-    void rc2014Network_special_inquiry();
+    bool rc2014Network_status_channel_json(NetworkStatus *ns);
 
     /**
-     * @brief called to handle special protocol interactions when DSTATS=$00, meaning there is no payload.
-     * Essentially, call the protocol action
-     * and based on the return, signal rc2014net_complete() or error().
+     * @brief Parse incoming JSON. (must be in JSON channelMode)
      */
-    void rc2014Network_special_00();
+    void rc2014_parse_json();
 
     /**
-     * @brief called to handle protocol interactions when DSTATS=$40, meaning the payload is to go from
-     * the peripheral back to the ATARI. Essentially, call the protocol action with the accrued special
-     * buffer (containing the devicespec) and based on the return, use bus_to_computer() to transfer the
-     * resulting data. Currently this is assumed to be a fixed 256 byte buffer.
+     * @brief Set JSON query string. (must be in JSON channelMode)
      */
-    void rc2014Network_special_40();
+    void rc2014_set_json_query();
 
     /**
-     * @brief called to handle protocol interactions when DSTATS=$80, meaning the payload is to go from
-     * the ATARI to the pheripheral. Essentially, call the protocol action with the accrued special
-     * buffer (containing the devicespec) and based on the return, use bus_to_peripheral() to transfer the
-     * resulting data. Currently this is assumed to be a fixed 256 byte buffer.
+     * @brief set channel mode, JSON or PROTOCOL
      */
-    void rc2014Network_special_80();
+    virtual void rc2014_set_channel_mode();
+
+
 
     /**
      * Called to pulse the PROCEED interrupt, rate limited by the interrupt timer.
@@ -373,10 +383,6 @@ private:
      */
     void rc2014Network_set_timer_rate();
 
-    /**
-     * @brief perform ->FujiNet commands on protocols that do not use an explicit OPEN channel.
-     */
-    void rc2014Network_do_idempotent_command_80();
 
     /**
      * @brief parse URL and instantiate protocol
