@@ -22,15 +22,17 @@ protected:
     // SIO THINGS
     TaskHandle_t *thPrinter;
 
-    uint8_t _buffer[16];
+    static constexpr int TX_BUF_SIZE = 256;
+
+    uint8_t _buffer[TX_BUF_SIZE];
     
-    void sio_write(uint8_t aux1, uint8_t aux2);
-    
-    virtual void rc2014_control_status();
-    virtual void rc2014_control_send();
-    virtual void rc2014_control_ready();
+    virtual void status();
+    virtual void write();
+    virtual void ready();
+    virtual void stream();
 
     void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
+    void rc2014_handle_stream() override;
     void shutdown() override;
 
     printer_emu *_pptr = nullptr;
@@ -56,7 +58,6 @@ public:
         PRINTER_ATARI_1029,
         PRINTER_ATARI_XMM801,
         PRINTER_ATARI_XDM121,
-        PRINTER_COLECO_rc2014,
         PRINTER_EPSON,
         PRINTER_EPSON_PRINTSHOP,
         PRINTER_OKIMATE10,
@@ -82,7 +83,6 @@ public:
         "Atari 1029",
         "Atari XMM801",
         "Atari XDM121",
-        "Coleco rc2014 Printer",
         "Epson 80",
         "Epson PrintShop",
         "Okimate 10",

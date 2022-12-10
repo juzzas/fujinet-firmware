@@ -68,13 +68,13 @@
 
 #define RING_INTERVAL 3000 // How often to print RING when having a new incoming connection (ms)
 #define MAX_CMD_LENGTH 256 // Maximum length for AT command
-#define TX_BUF_SIZE 256    // Buffer where to read from serial before writing to TCP (that direction is very blocking by the ESP TCP stack, so we can't do one byte a time.)
 
 #define ANSWER_TIMER_MS 1000 // milliseconds to wait before issuing CONNECT command, to simulate carrier negotiation.
 
 class rc2014Modem : public virtualDevice
 {
 private:
+    static constexpr int TX_BUF_SIZE = 256;
 
 #define RESULT_CODE_OK              0
 #define RESULT_CODE_CONNECT         1
@@ -215,9 +215,8 @@ protected:
     void shutdown() override;
 
 public:
-
-    bool modemActive = true; //false; // If we are in modem mode or not
-    void rc2014_handle_modem();  // Handle incoming & outgoing data for modem
+    // Handle incoming & outgoing data for modem
+    void rc2014_handle_stream() override;
 
     rc2014Modem(FileSystem *_fs, bool snifferEnable);
     virtual ~rc2014Modem();

@@ -174,6 +174,11 @@ void virtualDevice::rc2014_response_status()
 {
 }
 
+void virtualDevice::rc2014_handle_stream()
+{
+    fnUartSIO.flush_input();
+}
+
 void virtualDevice::rc2014_idle()
 {
     // Not implemented in base class
@@ -232,18 +237,11 @@ void systemBus::_rc2014_process_cmd()
         else
 #endif
         {
-            {
-                // find device, ack and pass control
-                // or go back to WAIT
-                for (auto devicep : _daisyChain)
-                {
-                    if (tempFrame.device == devicep.second->_devnum)
-                    {
-                        _activeDev = devicep.second;
-                        // handle command
-                        _activeDev->rc2014_process(tempFrame.commanddata, tempFrame.checksum);
-                    }
-                }
+            // find device, ack and pass control
+            // or go back to WAIT
+            auto devp = _daisyChain.find(tempFrame.device);
+            if (devp != _daisyChain.end()) {
+                (*devp).second->rc2014_process(tempFrame.commanddata, tempFrame.checksum);
             }
         }
     } // valid checksum
@@ -275,12 +273,12 @@ void systemBus::service()
         _rc2014_process_cmd();
     }
     // Go check if the modem needs to read data if it's active
-    else if (_modemDev != nullptr && _modemDev->modemActive && Config.get_modem_enabled())
+    else if (_streamDev != nullptr && _streamDev->device_active)
     {
-        _modemDev->rc2014_handle_modem();
+        _streamDev->rc2014_handle_stream();
     }
     else
-    // Neither CMD nor active modem, so throw out any stray input data
+    // Neither CMD nor active streaming device, so throw out any stray input data
     {
         //Debug_println("RS232 Srvc Flush");
         fnUartSIO.flush_input();
@@ -330,22 +328,6 @@ void systemBus::addDevice(virtualDevice *pDevice, uint8_t device_id)
     Debug_printf("Adding device: %02X\n", device_id);
     pDevice->_devnum = device_id;
     _daisyChain[device_id] = pDevice;
-
-    switch (device_id)
-    {
-    case RC2014_DEVICEID_FUJINET:
-        _fujiDev = (rc2014Fuji *)pDevice;
-        break;
-    case RC2014_DEVICEID_MODEM:
-        _modemDev = (rc2014Modem *)pDevice;
-        break;
-    case RC2014_DEVICEID_CPM:
-        _cpmDev = (rc2014CPM *)pDevice;
-        break;
-
-    }
-
-    
 }
 
 bool systemBus::deviceExists(uint8_t device_id)
@@ -406,6 +388,21 @@ void systemBus::disableDevice(uint8_t device_id)
 {
     if (_daisyChain.find(device_id) != _daisyChain.end())
         _daisyChain[device_id]->device_active = false;
+}
+
+void systemBus::streamDevice(uint8_t device_id)
+{
+    Debug_printf("streamDevice: %x\n", device_id);
+    auto device = _daisyChain.find(device_id);
+    if (device != _daisyChain.end()) {
+        if (device->second->device_active)
+            _streamDev = device->second;
+    }
+}
+
+void systemBus::streamDeactivate()
+{
+    _streamDev = nullptr;
 }
 
 systemBus rc2014Bus;

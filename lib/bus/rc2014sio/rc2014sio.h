@@ -15,8 +15,8 @@
 #define RC2014_DEVICEID_DISK 0x31
 #define RC2014_DEVICEID_DISK_LAST 0x3F
 
-#define RC2014_DEVICEID_PRINTER 0x40
-#define RC2014_DEVICEID_PRINTER_LAST 0x43
+#define RC2014_DEVICEID_PRINTER 0x41
+#define RC2014_DEVICEID_PRINTER_LAST 0x44
 
 
 #define RC2014_DEVICEID_FUJINET 0x70
@@ -178,11 +178,12 @@ protected:
     virtual void rc2014_control_ready();
 
     /**
-     * @brief Device Number: 0-15
+     * @brief Device Number: 0-255
      */
     uint8_t _devnum;
 
     virtual void shutdown() {}
+
     /**
      * @brief All RS232 devices repeatedly call this routine to fan out to other methods for each command. 
      * This is typcially implemented as a switch() statement.
@@ -203,6 +204,11 @@ protected:
      * @brief send status response
      */
     virtual void rc2014_response_status();
+    
+    /**
+     * @brief handle the uart stream when not used for command
+    */
+    virtual void rc2014_handle_stream();
     
     /**
      * @brief command frame, used by network protocol, ultimately
@@ -242,12 +248,7 @@ class systemBus
 {
 private:
     std::map<uint8_t, virtualDevice *> _daisyChain;
-    virtualDevice *_activeDev = nullptr;
-    rc2014CPM *_cpmDev = nullptr;
-    rc2014Fuji *_fujiDev = nullptr;
-    rc2014Modem *_modemDev = nullptr;
-    rc2014Printer *_printerDev = nullptr;
-
+    virtualDevice *_streamDev = nullptr;
 
     void _rc2014_process_cmd();
     void _rc2014_process_queue();
@@ -275,6 +276,8 @@ public:
     bool deviceExists(uint8_t device_id);
     void enableDevice(uint8_t device_id);
     void disableDevice(uint8_t device_id);
+    void streamDevice(uint8_t device_id);
+    void streamDeactivate();
     virtualDevice *deviceById(uint8_t device_id);
     void changeDeviceId(virtualDevice *pDevice, uint8_t device_id);
     QueueHandle_t qrc2014Messages = nullptr;

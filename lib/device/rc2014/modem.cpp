@@ -971,7 +971,7 @@ void rc2014Modem::modemCommand()
 /*
   Handle incoming & outgoing data for modem
 */
-void rc2014Modem::rc2014_handle_modem()
+void rc2014Modem::rc2014_handle_stream()
 {
     /**** AT command mode ****/
     if (cmdMode == true)

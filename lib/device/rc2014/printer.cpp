@@ -20,6 +20,12 @@
 #include "png_printer.h"
 #include "coleco_printer.h"
 
+/* TODO
+   - what is bpos used for?
+   - set stream mode
+   - handle stream
+*/
+
 std::string buf;
 bool taskActive=false;
 
@@ -66,11 +72,26 @@ rc2014Printer::printer_type rc2014Printer::match_modelname(std::string model_nam
     return (printer_type)i;
 }
 
-void rc2014Printer::rc2014_control_status()
+void rc2014Printer::status()
 {
-    uint8_t c[6] = {0x82, 0x10, 0x00, 0x00, 0x00, 0x10};
+    uint8_t c[4] = {};
 
-    rc2014_send_buffer(c, sizeof(c));
+    Debug_printf("rc2014printer::status()\n");
+
+    _last_ms = fnSystem.millis();
+
+    rc2014_response_ack();
+
+    c[0] = 0; /* error status */
+    c[1] = _lastaux1; /* last write length */
+    c[2] = 0; /* reserved */
+    c[3] = 0; /* reserved */
+
+    rc2014_send_buffer((uint8_t *)c, 4);
+    rc2014_send(rc2014_checksum((uint8_t *)c, 4));
+
+    rc2014_send_complete();
+
 }
 
 void rc2014Printer::idle()
@@ -91,24 +112,56 @@ void rc2014Printer::idle()
     fnLedManager.set(LED_BT,false);
 }
 
-void rc2014Printer::rc2014_control_send()
+/**
+ * rc2014 Write command
+ * Write # of bytes specified by 'aux1' from tx_buffer from the rc2014.
+ * 'aux2' for Atari 822 printer might be 0 or 1 in graphics mode
+ */
+void rc2014Printer::write()
 {
-    unsigned short s = rc2014_recv_length();
+    Debug_printf("rc2014Printer::write()\n");
+    _lastaux1 = cmdFrame.aux1;
+    _lastaux2 = cmdFrame.aux2;
+    _last_ms = fnSystem.millis();
 
-    rc2014_recv_buffer(_buffer, s);
+    rc2014_response_ack();
+
+    uint16_t num_bytes = cmdFrame.aux1;
+
+    memset(_buffer, 0, sizeof(_buffer)); // clear _buffer
+    rc2014_recv_buffer(_buffer, num_bytes);
     uint8_t ck = rc2014_recv(); // ck
 
     
+    // Copy the data to the printer emulator's buffer
+    memcpy(_pptr->provideBuffer(), _buffer, num_bytes);
     rc2014_response_ack();
 
     _last_ms = fnSystem.millis();
-    memcpy(_pptr->provideBuffer(),_buffer,s);
-    bpos=s;
+    bpos=num_bytes;
+
+    if (_pptr->process(num_bytes, _lastaux1, _lastaux2))
+        rc2014_send_complete();
+    else
+    {
+        rc2014_send_error();
+    }
+
 }
 
-void rc2014Printer::rc2014_control_ready()
+void rc2014Printer::ready()
 {
     rc2014_response_ack();
+}
+
+void rc2014Printer::stream()
+{
+    Debug_printf("rc2014Printer::stream()\n");
+
+    rc2014_response_ack();
+    rc2014Bus.streamDeactivate();
+    rc2014Bus.streamDevice(_devnum);
+    rc2014_send_complete();
 }
 
 void rc2014Printer::rc2014_process(uint32_t commanddata, uint8_t checksum)
@@ -116,7 +169,40 @@ void rc2014Printer::rc2014_process(uint32_t commanddata, uint8_t checksum)
     cmdFrame.commanddata = commanddata;
     cmdFrame.checksum = checksum;
 
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
+    switch (cmdFrame.comnd)
+    {
+    case 'W':
+        write();
+        break;
+    case 'S':
+        status();
+        break;
+    case 'X':
+        stream();
+        break;
+    default:
+        Debug_printf("rc2014 process: unimplemented command: 0x%02x", cmdFrame.comnd);
+    }
+}
+
+void rc2014Printer::rc2014_handle_stream()
+{
+    int num_bytes = rc2014_recv_available();
+
+    if (num_bytes > 0) {
+        int sioBytesRead = rc2014_recv_buffer(_buffer, 
+                (num_bytes > TX_BUF_SIZE) ? TX_BUF_SIZE : num_bytes);
+
+        // Copy the data to the printer emulator's buffer
+        memcpy(_pptr->provideBuffer(), _buffer, sioBytesRead);
+
+        _last_ms = fnSystem.millis();
+        bpos=sioBytesRead;
+
+        Debug_printf("rc2014Printer::rc2014_handle_stream(): bytes processing %d\n", num_bytes);
+        _pptr->process(num_bytes, _lastaux1, _lastaux2);
+    }
+
 }
 
 void rc2014Printer::shutdown()
@@ -171,6 +257,8 @@ void rc2014Printer::set_printer_type(printer_type printer_type)
     }
 
     _pptr->initPrinter(_storage);
+    //_pptr->setEOLBypass(true);
+    _pptr->setEOL(0x0d);
 }
 
 #endif /* NEW_TARGET */
