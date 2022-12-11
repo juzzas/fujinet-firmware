@@ -245,7 +245,6 @@ void rc2014Fuji::rc2014_mount_host()
     Debug_println("Fuji cmd: MOUNT HOST");
 
     unsigned char hostSlot = rc2014_recv();
-
     rc2014_recv(); // Get CK
 
     if (hostMounted[hostSlot] == false)
@@ -254,7 +253,6 @@ void rc2014Fuji::rc2014_mount_host()
         hostMounted[hostSlot] = true;
     }
 
-    
     rc2014_response_ack();
 }
 

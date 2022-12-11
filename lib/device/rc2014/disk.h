@@ -18,14 +18,12 @@ private:
 
     unsigned long blockNum=INVALID_SECTOR_VALUE;
 
-    void set_status(uint8_t s);
-    void rc2014_control_clr();
-    void rc2014_control_receive();
-    void rc2014_control_send();
-    void rc2014_control_send_block_num();
-    void rc2014_control_send_block_data();
-    virtual void rc2014_response_status();
-    void rc2014_response_send();
+    void read();
+    void write(bool verify);
+    void format();
+    void status();
+
+    bool write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors);
 
     void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
 
@@ -34,7 +32,6 @@ public:
     mediatype_t mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type = MEDIATYPE_UNKNOWN);
     void unmount();
     bool write_blank(FILE *f, uint32_t numBlocks);
-    virtual void reset();
 
     mediatype_t mediatype() { return _media == nullptr ? MEDIATYPE_UNKNOWN : _media->_mediatype; };
 
