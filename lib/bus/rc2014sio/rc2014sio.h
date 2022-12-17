@@ -276,6 +276,7 @@ public:
     bool deviceExists(uint8_t device_id);
     void enableDevice(uint8_t device_id);
     void disableDevice(uint8_t device_id);
+    bool enabledDeviceStatus(uint8_t device_id);
     void streamDevice(uint8_t device_id);
     void streamDeactivate();
     virtualDevice *deviceById(uint8_t device_id);

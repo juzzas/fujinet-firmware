@@ -34,6 +34,7 @@ protected:
     FILE * _file = nullptr;
     paper_t _paper_type = RAW;
     bool _eol_bypass = false;
+    bool _lf_at_cr = true;
 
     // ATARI THINGS
     bool translate850 = false;  // default to sio printer

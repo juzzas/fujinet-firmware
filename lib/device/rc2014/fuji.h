@@ -116,6 +116,7 @@ protected:
     void rc2014_set_boot_mode();          // 0xD6
     void rc2014_enable_device();          // 0xD5
     void rc2014_disable_device();         // 0xD4
+    void rc2014_device_enabled_status();  // 0xD1
 
     void rc2014_test_command();
 

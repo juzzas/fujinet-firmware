@@ -398,7 +398,8 @@ bool pdfPrinter::process_buffer(uint8_t n, uint8_t aux1, uint8_t aux2)
             }
 
             // disposition the current byte
-            pdf_handle_char(c, aux1, aux2);
+            if (c != 0x0A)
+                pdf_handle_char(c, aux1, aux2);
 
 #ifdef DEBUG
             // Debug_printf("c: %3d  x: %6.2f  y: %6.2f  ", c, pdf_X, pdf_Y + pdf_dY);

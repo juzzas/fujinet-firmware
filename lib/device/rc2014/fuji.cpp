@@ -243,9 +243,9 @@ void rc2014Fuji::rc2014_net_get_wifi_status()
 void rc2014Fuji::rc2014_mount_host()
 {
     Debug_println("Fuji cmd: MOUNT HOST");
+    rc2014_response_ack();
 
-    unsigned char hostSlot = rc2014_recv();
-    rc2014_recv(); // Get CK
+    unsigned char hostSlot = cmdFrame.aux1;
 
     if (hostMounted[hostSlot] == false)
     {
@@ -253,18 +253,17 @@ void rc2014Fuji::rc2014_mount_host()
         hostMounted[hostSlot] = true;
     }
 
-    rc2014_response_ack();
+    rc2014_send_complete();
 }
 
 // Disk Image Mount
 void rc2014Fuji::rc2014_disk_image_mount()
 {
     Debug_println("Fuji cmd: MOUNT IMAGE");
+    rc2014_response_ack();
 
-    uint8_t deviceSlot = rc2014_recv();
-    uint8_t options = rc2014_recv(); // DISK_ACCESS_MODE
-
-    rc2014_recv(); // CK
+    uint8_t deviceSlot = cmdFrame.aux1;
+    uint8_t options = cmdFrame.aux2; // DISK_ACCESS_MODE
 
     // TODO: Implement FETCH?
     char flag[3] = {'r', 0, 0};
@@ -279,7 +278,7 @@ void rc2014Fuji::rc2014_disk_image_mount()
                  disk.filename, disk.host_slot, flag, deviceSlot + 1);
 
     
-    rc2014_response_ack();
+    rc2014_send_complete();
 
     disk.fileh = host.file_open(disk.filename, disk.filename, sizeof(disk.filename), flag);
 
@@ -296,11 +295,11 @@ void rc2014Fuji::rc2014_disk_image_mount()
 // Toggle boot config on/off, aux1=0 is disabled, aux1=1 is enabled
 void rc2014Fuji::rc2014_set_boot_config()
 {
-    boot_config = rc2014_recv();
-    rc2014_recv();
-
-    
+    Debug_println("Fuji cmd: SET BOOT CONFIG");
     rc2014_response_ack();
+    boot_config = cmdFrame.aux1;
+    
+    rc2014_send_complete();
 }
 
 // Do SIO copy
@@ -362,14 +361,15 @@ void rc2014Fuji::debug_tape()
 // Disk Image Unmount
 void rc2014Fuji::rc2014_disk_image_umount()
 {
-    unsigned char ds = rc2014_recv();
-    rc2014_recv();
-
-    
+    Debug_println("Fuji cmd: UMOUNT DISK IMAGE");
     rc2014_response_ack();
 
+    unsigned char ds = cmdFrame.aux1;
+    
     _fnDisks[ds].disk_dev.unmount();
     _fnDisks[ds].reset();
+
+    rc2014_send_complete();
 }
 
 // Disk Image Rotate
@@ -418,7 +418,7 @@ void rc2014Fuji::rc2014_open_directory()
 {
     Debug_println("Fuji cmd: OPEN DIRECTORY");
 
-    uint8_t hostSlot = rc2014_recv();
+    uint8_t hostSlot = cmdFrame.aux1;
 
     rc2014_recv_buffer((uint8_t *)&dirpath, 256);
     rc2014_recv(); // Grab checksum
@@ -495,142 +495,106 @@ void _set_additional_direntry_details(fsdir_entry_t *f, uint8_t *dest, uint8_t m
 
 void rc2014Fuji::rc2014_read_directory_entry()
 {
-    uint8_t maxlen = rc2014_recv();
-    uint8_t addtl = rc2014_recv();
+    uint8_t maxlen = cmdFrame.aux1;
+    uint8_t addtl = cmdFrame.aux2;
 
-    rc2014_recv(); // Checksum
+    rc2014_response_ack();
 
-    if (response[0] == 0x00)
+    Debug_printf("Fuji cmd: READ DIRECTORY ENTRY (max=%hu)\n", maxlen);
+
+    fsdir_entry_t *f = _fnHosts[_current_open_directory_slot].dir_nextfile();
+
+    if (f == nullptr)
     {
-        Debug_printf("Fuji cmd: READ DIRECTORY ENTRY (max=%hu)\n", maxlen);
-
-        fsdir_entry_t *f = _fnHosts[_current_open_directory_slot].dir_nextfile();
-
-        if (f == nullptr)
-        {
-            Debug_println("Reached end of of directory");
-            dirpath[0] = 0x7F;
-            dirpath[1] = 0x7F;
-        }
-        else
-        {
-            Debug_printf("::read_direntry \"%s\"\n", f->filename);
-
-            int bufsize = sizeof(dirpath);
-            char *filenamedest = dirpath;
-
-            // If 0x80 is set on AUX2, send back additional information
-            if (addtl & 0x80)
-            {
-                _set_additional_direntry_details(f, (uint8_t *)dirpath, maxlen);
-                // Adjust remaining size of buffer and file path destination
-                bufsize = sizeof(dirpath) - ADDITIONAL_DETAILS_BYTES;
-                filenamedest = dirpath + ADDITIONAL_DETAILS_BYTES;
-            }
-            else
-            {
-                bufsize = maxlen;
-            }
-
-            int filelen;
-            // int filelen = strlcpy(filenamedest, f->filename, bufsize);
-            if (maxlen < 128)
-            {
-                filelen = util_ellipsize(f->filename, filenamedest, bufsize - 1);
-            }
-            else
-            {
-                filelen = strlcpy(filenamedest, f->filename, bufsize);
-            }
-
-            // Add a slash at the end of directory entries
-            if (f->isDir && filelen < (bufsize - 2))
-            {
-                dirpath[filelen] = '/';
-                dirpath[filelen + 1] = '\0';
-            }
-        }
-
-        // Hack-o-rama to add file type character to beginning of path.
-        if (maxlen == 31)
-        {
-            memmove(&dirpath[2], dirpath, 254);
-            if (strstr(dirpath, ".DDP") || strstr(dirpath, ".ddp"))
-            {
-                dirpath[0] = 0x85;
-                dirpath[1] = 0x86;
-            }
-            else if (strstr(dirpath, ".DSK") || strstr(dirpath, ".dsk"))
-            {
-                dirpath[0] = 0x87;
-                dirpath[1] = 0x88;
-            }
-            else if (strstr(dirpath, ".ROM") || strstr(dirpath, ".rom"))
-            {
-                dirpath[0] = 0x89;
-                dirpath[1] = 0x8a;
-            }
-            else if (strstr(dirpath, "/"))
-            {
-                dirpath[0] = 0x83;
-                dirpath[1] = 0x84;
-            }
-            else
-                dirpath[0] = dirpath[1] = 0x20;
-        }
-
-        memset(response, 0, sizeof(response));
-        memcpy(response, dirpath, maxlen);
-        response_len = maxlen;
+        Debug_println("Reached end of of directory");
+        dirpath[0] = 0x7F;
+        dirpath[1] = 0x7F;
     }
     else
     {
-        
-        rc2014_response_ack();
+        Debug_printf("::read_direntry \"%s\"\n", f->filename);
+
+        int bufsize = sizeof(dirpath);
+        char *filenamedest = dirpath;
+
+        // If 0x80 is set on AUX2, send back additional information
+        if (addtl & 0x80)
+        {
+            _set_additional_direntry_details(f, (uint8_t *)dirpath, maxlen);
+            // Adjust remaining size of buffer and file path destination
+            bufsize = sizeof(dirpath) - ADDITIONAL_DETAILS_BYTES;
+            filenamedest = dirpath + ADDITIONAL_DETAILS_BYTES;
+        }
+        else
+        {
+            bufsize = maxlen;
+        }
+
+        int filelen;
+        // int filelen = strlcpy(filenamedest, f->filename, bufsize);
+        if (maxlen < 128)
+        {
+            filelen = util_ellipsize(f->filename, filenamedest, bufsize - 1);
+        }
+        else
+        {
+            filelen = strlcpy(filenamedest, f->filename, bufsize);
+        }
+
+        // Add a slash at the end of directory entries
+        if (f->isDir && filelen < (bufsize - 2))
+        {
+            dirpath[filelen] = '/';
+            dirpath[filelen + 1] = '\0';
+        }
     }
+
+    memset(response, 0, sizeof(response));
+    memcpy(response, dirpath, maxlen);
+
+    response_len = maxlen;
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+
+    rc2014_send_complete();
 }
 
 void rc2014Fuji::rc2014_get_directory_position()
 {
     Debug_println("Fuji cmd: GET DIRECTORY POSITION");
+    rc2014_response_ack();
 
     uint16_t pos = _fnHosts[_current_open_directory_slot].dir_tell();
-
-    rc2014_recv(); // ck
-
-    response_len = sizeof(pos);
-    memcpy(response, &pos, sizeof(pos));
-
+    response[0] = pos & 0xff;
+    response[1] = (pos & 0xff00) >> 8;
+    response_len = 2;
     
-    rc2014_response_ack();
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+
+    rc2014_send_complete();
 }
 
 void rc2014Fuji::rc2014_set_directory_position()
 {
     Debug_println("Fuji cmd: SET DIRECTORY POSITION");
+    rc2014_response_ack();
 
     // DAUX1 and DAUX2 hold the position to seek to in low/high order
-    uint16_t pos = 0;
-
-    rc2014_recv_buffer((uint8_t *)&pos, sizeof(uint16_t));
+    uint16_t pos = (cmdFrame.aux2 << 8) | cmdFrame.aux1;
 
     Debug_printf("pos is now %u", pos);
 
-    rc2014_recv(); // ck
-
-    
-    rc2014_response_ack();
-
     _fnHosts[_current_open_directory_slot].dir_seek(pos);
+
+    rc2014_send_complete();
 }
 
 void rc2014Fuji::rc2014_close_directory()
 {
     Debug_println("Fuji cmd: CLOSE DIRECTORY");
 
-    rc2014_recv(); // ck
-
-    
     rc2014_response_ack();
 
     if (_current_open_directory_slot != -1)
@@ -638,6 +602,8 @@ void rc2014Fuji::rc2014_close_directory()
 
     _current_open_directory_slot = -1;
     response_len = 1;
+
+    rc2014_send_complete();
 }
 
 // Get network adapter configuration
@@ -715,7 +681,7 @@ void rc2014Fuji::rc2014_new_disk()
     disk.disk_dev.write_blank(disk.fileh, numBlocks);
 
     
-    rc2014_response_ack();
+    rc2014_send_complete();
 
     fclose(disk.fileh);
 }
@@ -724,8 +690,7 @@ void rc2014Fuji::rc2014_new_disk()
 void rc2014Fuji::rc2014_read_host_slots()
 {
     Debug_println("Fuji cmd: READ HOST SLOTS");
-
-    rc2014_recv(); // ck
+    rc2014_response_ack();
 
     char hostSlots[MAX_HOSTS][MAX_HOSTNAME_LEN];
     memset(hostSlots, 0, sizeof(hostSlots));
@@ -736,8 +701,10 @@ void rc2014Fuji::rc2014_read_host_slots()
     memcpy(response, hostSlots, sizeof(hostSlots));
     response_len = sizeof(hostSlots);
 
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
     
-    rc2014_response_ack();
+    rc2014_send_complete();
 }
 
 // Read and save host slot data from computer
@@ -745,14 +712,14 @@ void rc2014Fuji::rc2014_write_host_slots()
 {
     Debug_println("Fuji cmd: WRITE HOST SLOTS");
 
-    char hostSlots[MAX_HOSTS][MAX_HOSTNAME_LEN];
-    rc2014_recv_buffer((uint8_t *)hostSlots, sizeof(hostSlots));
-
-    rc2014_recv(); // ck
-
-    
     rc2014_response_ack();
 
+    char hostSlots[MAX_HOSTS][MAX_HOSTNAME_LEN];
+    rc2014_recv_buffer((uint8_t *)hostSlots, sizeof(hostSlots));
+    rc2014_recv(); // ck
+
+    rc2014_response_ack();
+    
     for (int i = 0; i < MAX_HOSTS; i++)
     {
         hostMounted[i] = false;
@@ -760,6 +727,8 @@ void rc2014Fuji::rc2014_write_host_slots()
     }
     _populate_config_from_slots();
     Config.save();
+
+    rc2014_send_complete();
 }
 
 // Store host path prefix
@@ -776,6 +745,7 @@ void rc2014Fuji::rc2014_get_host_prefix()
 void rc2014Fuji::rc2014_read_device_slots()
 {
     Debug_println("Fuji cmd: READ DEVICE SLOTS");
+    rc2014_response_ack();
 
     struct disk_slot
     {
@@ -799,19 +769,20 @@ void rc2014Fuji::rc2014_read_device_slots()
 
     returnsize = sizeof(disk_slot) * MAX_DISK_DEVICES;
 
-    rc2014_recv(); // ck
-
-    
-    rc2014_response_ack();
-
     memcpy(response, &diskSlots, returnsize);
     response_len = returnsize;
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
 }
 
 // Read and save disk slot data from computer
 void rc2014Fuji::rc2014_write_device_slots()
 {
     Debug_println("Fuji cmd: WRITE DEVICE SLOTS");
+    rc2014_response_ack();
 
     struct
     {
@@ -821,11 +792,10 @@ void rc2014Fuji::rc2014_write_device_slots()
     } diskSlots[MAX_DISK_DEVICES];
 
     rc2014_recv_buffer((uint8_t *)&diskSlots, sizeof(diskSlots));
-
     rc2014_recv(); // ck
 
-    
     rc2014_response_ack();
+    
 
     // Load the data into our current device array
     for (int i = 0; i < MAX_DISK_DEVICES; i++)
@@ -834,6 +804,8 @@ void rc2014Fuji::rc2014_write_device_slots()
     // Save the data to disk
     _populate_config_from_slots();
     Config.save();
+
+    rc2014_send_complete();
 }
 
 // Temporary(?) function while we move from old config storage to new
@@ -905,6 +877,7 @@ void rc2014Fuji::rc2014_set_device_filename()
     unsigned char flags = cmdFrame.aux2;
 
     Debug_printf("SET DEVICE SLOT %d filename\n", ds);
+    rc2014_response_ack();
 
     rc2014_recv_buffer((uint8_t *)&f, 256);
     rc2014_recv(); // CK
@@ -924,63 +897,55 @@ void rc2014Fuji::rc2014_set_device_filename()
 // Get a 256 byte filename from device slot
 void rc2014Fuji::rc2014_get_device_filename()
 {
-    unsigned char ds = rc2014_recv();
+    unsigned char ds = cmdFrame.aux1;
 
-    rc2014_recv();
-
-    
     rc2014_response_ack();
 
     memcpy(response, _fnDisks[ds].filename, 256);
     response_len = 256;
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
 }
 
-// Mounts the desired boot disk number
-void rc2014Fuji::insert_boot_device(uint8_t d)
-{
-    const char *config_atr = "/autorun.ddp";
-    const char *mount_all_atr = "/mount-and-boot.ddp";
-    FILE *fBoot;
-
-    switch (d)
-    {
-    case 0:
-        fBoot = fnSPIFFS.file_open(config_atr);
-        _bootDisk->mount(fBoot, config_atr, 0);
-        break;
-    case 1:
-        fBoot = fnSPIFFS.file_open(mount_all_atr);
-        _bootDisk->mount(fBoot, mount_all_atr, 0);
-        break;
-    }
-
-    _bootDisk->is_config_device = true;
-    _bootDisk->device_active = true;
-    Debug_printf("Media type is %d\n", _bootDisk->mediatype());
-}
 
 void rc2014Fuji::rc2014_enable_device()
 {
-    unsigned char d = rc2014_recv();
-
-    rc2014_recv();
-
+    unsigned char d = cmdFrame.aux1;
     
     rc2014_response_ack();
 
-    rc2014Bus.enableDevice(d);
+    rc2014Bus.enableDevice(d+0x70);
+
+    rc2014_send_complete();
 }
 
 void rc2014Fuji::rc2014_disable_device()
 {
-    unsigned char d = rc2014_recv();
+    unsigned char d = cmdFrame.aux1;
 
-    rc2014_recv();
-
-    
     rc2014_response_ack();
 
-    rc2014Bus.disableDevice(d);
+    rc2014Bus.disableDevice(d+0x70);
+
+    rc2014_send_complete();
+}
+
+void rc2014Fuji::rc2014_device_enabled_status()
+{
+    unsigned char d = cmdFrame.aux1;
+
+    rc2014_response_ack();
+
+    response[0] = (uint8_t)rc2014Bus.enabledDeviceStatus(d+0x70);
+    response_len = 1;
+
+    rc2014_send_buffer(response, response_len);
+    rc2014_send(rc2014_checksum(response, response_len));
+    
+    rc2014_send_complete();
 }
 
 // Initializes base settings and adds our devices to the SIO bus
@@ -1086,7 +1051,6 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     {
     // case FUJICMD_STATUS:
     //     rc2014_response_ack();
-    //     rs232_status();
     //     break;
     case FUJICMD_RESET:
         rc2014_reset_fujinet();
@@ -1106,57 +1070,45 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case FUJICMD_GET_WIFISTATUS:
         rc2014_net_get_wifi_status();
         break;
-    // case FUJICMD_MOUNT_HOST:
-    //     rs232_ack();
-    //     rs232_mount_host();
-    //     break;
-    // case FUJICMD_MOUNT_IMAGE:
-    //     rs232_ack();
-    //     rs232_disk_image_mount();
-    //     break;
-    // case FUJICMD_OPEN_DIRECTORY:
-    //     rs232_ack();
-    //     rs232_open_directory();
-    //     break;
-    // case FUJICMD_READ_DIR_ENTRY:
-    //     rs232_ack();
-    //     rs232_read_directory_entry();
-    //     break;
-    // case FUJICMD_CLOSE_DIRECTORY:
-    //     rs232_ack();
-    //     rs232_close_directory();
-    //     break;
-    // case FUJICMD_GET_DIRECTORY_POSITION:
-    //     rs232_ack();
-    //     rs232_get_directory_position();
-    //     break;
-    // case FUJICMD_SET_DIRECTORY_POSITION:
-    //     rs232_ack();
-    //     rs232_set_directory_position();
-    //     break;
-    // case FUJICMD_READ_HOST_SLOTS:
-    //     rs232_ack();
-    //     rs232_read_host_slots();
-    //     break;
-    // case FUJICMD_WRITE_HOST_SLOTS:
-    //     rs232_ack();
-    //     rs232_write_host_slots();
-    //     break;
-    // case FUJICMD_READ_DEVICE_SLOTS:
-    //     rs232_ack();
-    //     rs232_read_device_slots();
-    //     break;
-    // case FUJICMD_WRITE_DEVICE_SLOTS:
-    //     rs232_ack();
-    //     rs232_write_device_slots();
-    //     break;
-    // case FUJICMD_GET_WIFI_ENABLED:
-        // rc2014_net_get_wifi_enabled();
-        // break;
-    // case FUJICMD_UNMOUNT_IMAGE:
-    //     rs232_ack();
-    //     rs232_disk_image_umount();
-    //     break;
+    case FUJICMD_MOUNT_HOST:
+        rc2014_mount_host();
+        break;
+    case FUJICMD_MOUNT_IMAGE:
+        rc2014_disk_image_mount();
+        break;
+    case FUJICMD_OPEN_DIRECTORY:
+        rc2014_open_directory();
+        break;
+    case FUJICMD_READ_DIR_ENTRY:
+        rc2014_read_directory_entry();
+        break;
+    case FUJICMD_CLOSE_DIRECTORY:
+        rc2014_close_directory();
+        break;
+    case FUJICMD_GET_DIRECTORY_POSITION:
+        rc2014_get_directory_position();
+        break;
+    case FUJICMD_SET_DIRECTORY_POSITION:
+        rc2014_set_directory_position();
+        break;
+    case FUJICMD_READ_HOST_SLOTS:
+        rc2014_read_host_slots();
+        break;
+    case FUJICMD_WRITE_HOST_SLOTS:
+        rc2014_write_host_slots();
+        break;
+    case FUJICMD_READ_DEVICE_SLOTS:
+        rc2014_read_device_slots();
+        break;
+    case FUJICMD_WRITE_DEVICE_SLOTS:
+        rc2014_write_device_slots();
+        break;
+    //case FUJICMD_GET_WIFI_ENABLED:
+    //    rc2014_net_get_wifi_enabled();
+    //    break;
+    case FUJICMD_UNMOUNT_IMAGE:
+        rc2014_disk_image_umount();
+        break;
     case FUJICMD_GET_ADAPTERCONFIG:
         rc2014_get_adapter_config();
         break;
@@ -1164,38 +1116,30 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     //     rs232_ack();
     //     rs232_new_disk();
     //     break;
-    // case FUJICMD_SET_DEVICE_FULLPATH:
-    //     rs232_ack();
-    //     rs232_set_device_filename();
-    //     break;
+    case FUJICMD_SET_DEVICE_FULLPATH:
+        rc2014_set_device_filename();
+        break;
     // case FUJICMD_SET_HOST_PREFIX:
-    //     rs232_ack();
-    //     rs232_set_host_prefix();
+    //     rc2014_set_host_prefix();
     //     break;
     // case FUJICMD_GET_HOST_PREFIX:
-    //     rs232_ack();
-    //     rs232_get_host_prefix();
+    //     rc2014_get_host_prefix();
     //     break;
     // case FUJICMD_WRITE_APPKEY:
-    //     rs232_ack();
-    //     rs232_write_app_key();
+    //     rc2014_write_app_key();
     //     break;
     // case FUJICMD_READ_APPKEY:
-    //     rs232_ack();
-    //     rs232_read_app_key();
+    //     rc2014_read_app_key();
     //     break;
     // case FUJICMD_OPEN_APPKEY:
-    //     rs232_ack();
-    //     rs232_open_app_key();
+    //     rc2014_open_app_key();
     //     break;
     // case FUJICMD_CLOSE_APPKEY:
-    //     rs232_ack();
-    //     rs232_close_app_key();
+    //     rc2014_close_app_key();
     //     break;
-    // case FUJICMD_GET_DEVICE_FULLPATH:
-    //     rs232_ack();
-    //     rs232_get_device_filename();
-    //     break;
+    case FUJICMD_GET_DEVICE_FULLPATH:
+        rc2014_get_device_filename();
+        break;
     // case FUJICMD_CONFIG_BOOT:
     //     rs232_ack();
     //     rs232_set_boot_config();
@@ -1216,6 +1160,9 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     //     rs232_ack();
     //     rs232_enable_udpstream();
     //     break;
+    case FUJICMD_DEVICE_ENABLE_STATUS:
+        rc2014_device_enabled_status();
+        break;
     default:
         fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
         rc2014_response_nack();

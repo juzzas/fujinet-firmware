@@ -390,6 +390,14 @@ void systemBus::disableDevice(uint8_t device_id)
         _daisyChain[device_id]->device_active = false;
 }
 
+bool systemBus::enabledDeviceStatus(uint8_t device_id)
+{
+    if (_daisyChain.find(device_id) != _daisyChain.end())
+        return _daisyChain[device_id]->device_active;
+
+    return false;
+}
+
 void systemBus::streamDevice(uint8_t device_id)
 {
     Debug_printf("streamDevice: %x\n", device_id);
