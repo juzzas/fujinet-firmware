@@ -243,6 +243,10 @@ void systemBus::_rc2014_process_cmd()
             if (devp != _daisyChain.end()) {
                 (*devp).second->rc2014_process(tempFrame.commanddata, tempFrame.checksum);
             }
+            else
+            {
+                Debug_printf("CF for unknown device (%d)", tempFrame.device);
+            }
         }
     } // valid checksum
     else

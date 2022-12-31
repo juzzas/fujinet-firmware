@@ -418,7 +418,10 @@ void rc2014Fuji::rc2014_open_directory()
 {
     Debug_println("Fuji cmd: OPEN DIRECTORY");
 
+    rc2014_response_ack();
+
     uint8_t hostSlot = cmdFrame.aux1;
+
 
     rc2014_recv_buffer((uint8_t *)&dirpath, 256);
     rc2014_recv(); // Grab checksum
@@ -917,7 +920,7 @@ void rc2014Fuji::rc2014_enable_device()
     
     rc2014_response_ack();
 
-    rc2014Bus.enableDevice(d+0x70);
+    rc2014Bus.enableDevice(d);
 
     rc2014_send_complete();
 }
@@ -928,7 +931,7 @@ void rc2014Fuji::rc2014_disable_device()
 
     rc2014_response_ack();
 
-    rc2014Bus.disableDevice(d+0x70);
+    rc2014Bus.disableDevice(d);
 
     rc2014_send_complete();
 }
@@ -939,7 +942,7 @@ void rc2014Fuji::rc2014_device_enabled_status()
 
     rc2014_response_ack();
 
-    response[0] = (uint8_t)rc2014Bus.enabledDeviceStatus(d+0x70);
+    response[0] = (uint8_t)rc2014Bus.enabledDeviceStatus(d);
     response_len = 1;
 
     rc2014_send_buffer(response, response_len);
@@ -1140,10 +1143,9 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case FUJICMD_GET_DEVICE_FULLPATH:
         rc2014_get_device_filename();
         break;
-    // case FUJICMD_CONFIG_BOOT:
-    //     rs232_ack();
-    //     rs232_set_boot_config();
-    //     break;
+    case FUJICMD_CONFIG_BOOT:
+        rc2014_set_boot_config();
+        break;
     // case FUJICMD_COPY_FILE:
     //     rs232_ack();
     //     rs232_copy_file();
@@ -1160,6 +1162,18 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     //     rs232_ack();
     //     rs232_enable_udpstream();
     //     break;
+    case FUJICMD_ENABLE_DEVICE:
+        rc2014_enable_device();
+        break;
+    case FUJICMD_DISABLE_DEVICE:
+        rc2014_disable_device();
+        break;
+    // case FUJICMD_RANDOM_NUMBER:
+        // rc2014_random_number();
+        // break;
+    // case FUJICMD_GET_TIME:
+        // rc2014_get_time();
+        // break;
     case FUJICMD_DEVICE_ENABLE_STATUS:
         rc2014_device_enabled_status();
         break;
