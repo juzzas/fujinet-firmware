@@ -200,10 +200,8 @@ void rc2014Fuji::rc2014_net_set_ssid()
         } cfg;
 
         rc2014_recv_buffer((uint8_t *)&cfg, sizeof(cfg));
-
         uint8_t ck = rc2014_recv();
 
-        
         rc2014_response_ack();
 
         bool save = true;
@@ -426,6 +424,8 @@ void rc2014Fuji::rc2014_open_directory()
     rc2014_recv_buffer((uint8_t *)&dirpath, 256);
     rc2014_recv(); // Grab checksum
 
+    rc2014_response_ack();
+
     if (_current_open_directory_slot == -1)
     {
         // See if there's a search pattern after the directory path
@@ -485,10 +485,10 @@ void _set_additional_direntry_details(fsdir_entry_t *f, uint8_t *dest, uint8_t m
     if (f->isDir)                       // Also subtract a byte for a terminating slash on directories
         maxlen--;
     if (strlen(f->filename) >= maxlen)
-        dest[11] |= FF_TRUNC;
+        dest[10] |= FF_TRUNC;
 
     // File type
-    dest[12] = MediaType::discover_mediatype(f->filename);
+    dest[11] = (uint8_t)MediaType::discover_mediatype(f->filename);
 
     Debug_printf("Addtl: ");
     for (int i = 0; i < ADDITIONAL_DETAILS_BYTES; i++)
@@ -547,8 +547,8 @@ void rc2014Fuji::rc2014_read_directory_entry()
         // Add a slash at the end of directory entries
         if (f->isDir && filelen < (bufsize - 2))
         {
-            dirpath[filelen] = '/';
-            dirpath[filelen + 1] = '\0';
+            filenamedest[filelen] = '/';
+            filenamedest[filelen + 1] = '\0';
         }
     }
 
@@ -662,6 +662,8 @@ void rc2014Fuji::rc2014_new_disk()
     rc2014_recv_buffer(p, 256);
 
     rc2014_recv(); // CK
+
+    rc2014_response_ack();
 
     fujiDisk &disk = _fnDisks[ds];
     fujiHost &host = _fnHosts[hs];
