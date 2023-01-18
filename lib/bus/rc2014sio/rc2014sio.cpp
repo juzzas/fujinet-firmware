@@ -244,6 +244,10 @@ void systemBus::_rc2014_process_cmd()
             if (devp != _daisyChain.end()) {
                 (*devp).second->rc2014_process(tempFrame.commanddata, tempFrame.checksum);
             }
+            else
+            {
+                Debug_printf("CF for unknown device (%d)", tempFrame.device);
+            }
         }
     } // valid checksum
     else
@@ -391,6 +395,14 @@ void systemBus::disableDevice(uint8_t device_id)
 {
     if (_daisyChain.find(device_id) != _daisyChain.end())
         _daisyChain[device_id]->device_active = false;
+}
+
+bool systemBus::enabledDeviceStatus(uint8_t device_id)
+{
+    if (_daisyChain.find(device_id) != _daisyChain.end())
+        return _daisyChain[device_id]->device_active;
+
+    return false;
 }
 
 void systemBus::streamDevice(uint8_t device_id)
