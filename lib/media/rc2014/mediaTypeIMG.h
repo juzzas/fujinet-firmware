@@ -19,10 +19,19 @@
  * for the track number.
 */
 
+
+
+
 class MediaTypeIMG : public MediaType
 {
 private:
     uint32_t _sector_to_offset(uint16_t sectorNum);
+
+    struct IMG {
+        mediatype_t media_type;
+        uint32_t media_size;
+        DPB dpb;
+    };
 
 public:
     virtual bool read(uint16_t sectornum, uint16_t *readcount) override;
