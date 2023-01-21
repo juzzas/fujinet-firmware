@@ -4,19 +4,14 @@
 
 #include <cstdint>
 #include <cstring>
-<<<<<<< Updated upstream
-=======
 #include <map>
->>>>>>> Stashed changes
 #include <utility>
 
 #include "../../include/debug.h"
 
-<<<<<<< Updated upstream
-=======
 // From https://github.com/wwarthen/RomWBW/blob/master/Source/CPM3/biosldr.z80
 
-constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramater_blocks =
+const std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramater_blocks =
 {
     // dpb$hd:		; 8MB Hard Disk Drive
     // 	dw  	64		; spt: sectors per track
@@ -31,7 +26,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	16		; off: reserved tracks = 16 trks * (16 trks * 16 heads * 16 secs * 512 bytes) = 128k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_HD, {(8 * 1024 * 1024), { 64, 5, 31, 1, 2047, 511, 0b11110000, 0, 0x8000, 16, 2, 3 } } },
+    { MEDIATYPE_IMG_HD, { "IMG", (8 * 1024 * 1024), { 64, 5, 31, 1, 2047, 511, 0b11110000, 0, 0x8000, 16, 2, 3 } } },
 
     // dpb$fd720:	; 3.5" DS/DD Floppy Drive (720K)
     // 	dw  	36		; spt: sectors per track
@@ -46,7 +41,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	4		; off: reserved tracks = 4 trks * (512 b/sec * 36 sec/trk) = 18k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_FD720, (80 * 2 * 9 * 512), { 36, 4, 15, 0, 350, 127, 0b11000000, 0, 32, 4, 2, 3 } },
+    { MEDIATYPE_IMG_FD720, { "IMG", (80 * 2 * 9 * 512), { 36, 4, 15, 0, 350, 127, 0b11000000, 0, 32, 4, 2, 3 } } },
 
     // The PCW256/Pro-DOS definition is listed here;
 
@@ -73,7 +68,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	1		; off: reserved tracks = 4 trks * (512 b/sec * 36 sec/trk) = 18k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_FD720_PCW256, (80 * 2 * 9 * 512), { 36, 4, 15, 0, 356, 255, 0b11110000, 0, 64, 1, 2, 3 } },
+    { MEDIATYPE_IMG_FD720_PCW256, { "DSK", (80 * 2 * 9 * 512), { 36, 4, 15, 0, 356, 255, 0b11110000, 0, 64, 1, 2, 3 } } },
 
     // dpb_fd144:	; 3.5" DS/HD Floppy Drive (1.44M)
     // 	dw  	72		; spt: sectors per track
@@ -88,7 +83,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	2		; off: reserved tracks = 2 trks * (512 b/sec * 72 sec/trk) = 18k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_FD720, (80 * 2 * 18 * 512), { 72, 4, 15, 0, 710, 255, 0b11110000, 0, 64, 2, 2, 3 } },
+    { MEDIATYPE_IMG_FD720, { "IMG", (80 * 2 * 18 * 512), { 72, 4, 15, 0, 710, 255, 0b11110000, 0, 64, 2, 2, 3 } } },
 
     // dpb_fd360:	; 5.25" DS/DD Floppy Drive (360K) 
     // 	dw  	36		; spt: sectors per track
@@ -103,7 +98,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	4		; off: reserved tracks = 4 trks * (512 b/sec * 36 sec/trk) = 18k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_FD360, (40 * 2 * 9 * 512), { 36, 4, 15, 1, 170, 127, 0b11110000, 0, 32, 4, 2, 3 } },
+    { MEDIATYPE_IMG_FD360, { "IMG", (40 * 2 * 9 * 512), { 36, 4, 15, 1, 170, 127, 0b11110000, 0, 32, 4, 2, 3 } } },
 
     // dpb_fd120:	; 5.25" DS/HD Floppy Drive (1.2M)
     // 	dw  	60		; spt: sectors per track
@@ -118,7 +113,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	2		; off: reserved tracks = 2 trks * (512 b/sec * 60 sec/trk) = 15k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_FD120, (80 * 2 * 15 * 512), { 60, 4, 15, 0, 591, 255, 0b11110000, 0, 64, 2, 2, 3 } },
+    { MEDIATYPE_IMG_FD120, { "IMG", (80 * 2 * 15 * 512), { 60, 4, 15, 0, 591, 255, 0b11110000, 0, 64, 2, 2, 3 } } },
 
     // dpb_fd111:	; 8" DS/DD Floppy Drive (1.11M)
     // 	dw  	60		; spt: sectors per track
@@ -133,7 +128,7 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
     // 	dw  	2		; off: reserved tracks = 2 trks * (512 b/sec * 60 sec/trk) = 15k
     // 	db	2		; psh: 2 for 512 byte sectors
     // 	db	3		; phm: (512 / 128) - 1
-    { MEDIATYPE_IMG_FD111, (77 * 2 * 15 * 512), { 60, 4, 15, 0, 569, 255, 0b11110000, 0, 64, 2, 2, 3 } },
+    { MEDIATYPE_IMG_FD111, { "IMG", (77 * 2 * 15 * 512), { 60, 4, 15, 0, 569, 255, 0b11110000, 0, 64, 2, 2, 3 } } },
 
 
 
@@ -146,9 +141,6 @@ constexpr std::map<mediatype_t, MediaTypeIMG::CpmDiskImageDetails> disk_paramate
 
 
 
-
-
->>>>>>> Stashed changes
 // Returns byte offset of given sector number (1-based)
 uint32_t MediaTypeIMG::_sector_to_offset(uint16_t sectorNum)
 {
@@ -266,13 +258,13 @@ bool MediaTypeIMG::format(uint16_t *responsesize)
 /* 
  Mount 8MB RC2014 CP/M "slice"
 */
-mediatype_t MediaTypeIMG::mount(FILE *f, uint32_t disksize)
+mediatype_t MediaTypeIMG::mount(FILE *f, uint32_t disksize, mediatype_t disk_type)
 {
     Debug_print("IMG MOUNT\n");
 
     _media_fileh = f;
     _media_num_sectors = disksize / 512;
-    _mediatype = MEDIATYPE_IMG;
+    _mediatype = disk_type;
 
     return _mediatype;
 }

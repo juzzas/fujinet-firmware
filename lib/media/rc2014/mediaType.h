@@ -1,7 +1,7 @@
 #ifndef _MEDIA_TYPE_
 #define _MEDIA_TYPE_
 
-#include <stdio.h>
+#include <string>
 
 #define INVALID_SECTOR_VALUE 0xFFFFFFFF
 
@@ -20,7 +20,7 @@ enum mediatype_t
     MEDIATYPE_IMG_FD360,   // 5.25" DS/DD Floppy Drive (360K) 
     MEDIATYPE_IMG_FD120,   // 5.25" DS/HD Floppy Drive (1.2M)
     MEDIATYPE_IMG_FD111,   // 8" DS/DD Floppy Drive (1.11M)
-    MEDIATYPE_IMG_IBM3740, // 8" SS/SD Floppy Drive (237.5KB)
+    //MEDIATYPE_IMG_IBM3740, // 8" SS/SD Floppy Drive (237.5KB)
 
     MEDIATYPE_COUNT
 };
@@ -52,13 +52,19 @@ public:
                        // ;1 => 256-byte sectors, 3 => 512-byte sectors...
     };
 
+    struct DiskImageDetails {
+        mediatype_t media_type;
+        std::string file_extension;
+        uint32_t media_size;
+    };
+
     uint8_t _media_sectorbuff[DISK_BYTES_PER_SECTOR_SINGLE];
     uint32_t _media_last_sector = INVALID_SECTOR_VALUE-1;
     uint8_t _media_controller_status = DISK_CTRL_STATUS_CLEAR;
 
     mediatype_t _mediatype = MEDIATYPE_UNKNOWN;
 
-    virtual mediatype_t mount(FILE *f, uint32_t disksize) = 0;
+    virtual mediatype_t mount(FILE *f, uint32_t disksize, mediatype_t disk_type) = 0;
     virtual void unmount();
 
     // Returns TRUE if an error condition occurred
@@ -71,7 +77,7 @@ public:
     
     virtual void status(uint8_t statusbuff[4]) = 0;
 
-    static mediatype_t discover_mediatype(const char *filename);
+    static mediatype_t discover_mediatype(const char *filename, uint32_t disksize);
     uint16_t sector_size(uint16_t sector);
 
     virtual ~MediaType();

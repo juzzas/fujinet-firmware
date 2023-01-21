@@ -488,7 +488,7 @@ void _set_additional_direntry_details(fsdir_entry_t *f, uint8_t *dest, uint8_t m
         dest[10] |= FF_TRUNC;
 
     // File type
-    dest[11] = (uint8_t)MediaType::discover_mediatype(f->filename);
+    dest[11] = (uint8_t)MediaType::discover_mediatype(f->filename, fsize);
 
     Debug_printf("Addtl: ");
     for (int i = 0; i < ADDITIONAL_DETAILS_BYTES; i++)
@@ -1152,10 +1152,11 @@ void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
     //     rs232_ack();
     //     rs232_copy_file();
     //     break;
-    // case FUJICMD_MOUNT_ALL:
-    //     rs232_ack();
-    //     mount_all();
-    //     break;
+    case FUJICMD_MOUNT_ALL:
+        rc2014_response_ack();
+        mount_all();
+        rc2014_send_complete();
+        break;
     // case FUJICMD_SET_BOOT_MODE:
     //     rs232_ack();
     //     rs232_set_boot_mode();

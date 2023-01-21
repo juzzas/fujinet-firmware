@@ -1,7 +1,7 @@
 #ifndef _MEDIATYPE_IMG_
 #define _MEDIATYPE_IMG_
 
-#include <stdio.h>
+#include <string>
 
 #include <utility>
 
@@ -27,18 +27,11 @@ class MediaTypeIMG : public MediaType
 private:
     uint32_t _sector_to_offset(uint16_t sectorNum);
 
-<<<<<<< Updated upstream
-    struct IMG {
-        mediatype_t media_type;
-        uint32_t media_size;
-        DPB dpb;
-=======
 public:
     struct CpmDiskImageDetails {
         std::string file_extension;
         uint32_t media_size;
         CPM_DPB dpb;
->>>>>>> Stashed changes
     };
 
 public:
@@ -47,7 +40,7 @@ public:
 
     virtual bool format(uint16_t *respopnsesize) override;
 
-    virtual mediatype_t mount(FILE *f, uint32_t disksize) override;
+    virtual mediatype_t mount(FILE *f, uint32_t disksize, mediatype_t disk_type) override;
 
     virtual void status(uint8_t statusbuff[4]) override;
 
