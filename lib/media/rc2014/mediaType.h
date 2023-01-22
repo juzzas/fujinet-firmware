@@ -54,6 +54,7 @@ public:
 
     struct DiskImageDetails {
         mediatype_t media_type;
+        std::string media_type_string;
         std::string file_extension;
         uint32_t media_size;
     };

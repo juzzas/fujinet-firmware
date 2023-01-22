@@ -54,7 +54,8 @@ void rc2014Disk::read()
 // Write disk data from computer
 void rc2014Disk::write(bool verify)
 {
-    //Debug_print("disk WRITE\n");
+    Debug_print("disk WRITE\n");
+    rc2014_response_ack();
 
     if (_media != nullptr)
     {
@@ -83,6 +84,7 @@ void rc2014Disk::write(bool verify)
 void rc2014Disk::status()
 {
     Debug_print("disk STATUS\n");
+    rc2014_response_ack();
 
     /* STATUS BYTES
         #0 - Drive status
@@ -146,6 +148,8 @@ void rc2014Disk::format()
         return;
     }
 
+    rc2014_response_ack();
+
     uint16_t responsesize;
     bool err = _media->format(&responsesize);
 
@@ -173,19 +177,14 @@ mediatype_t rc2014Disk::mount(FILE *f, const char *filename, uint32_t disksize, 
     if (disk_type == MEDIATYPE_UNKNOWN && filename != nullptr)
         disk_type = MediaType::discover_mediatype(filename, disksize);
 
-    switch (disk_type)
-    {
-        // currently, we're not supporting disk on RC2014.
-        // but planning on supporting the 8meg and floppy formats used in RomWBW
-    case MEDIATYPE_IMG_HD:
-    case MEDIATYPE_IMG_FD720_PCW256:
+    if (disk_type != MEDIATYPE_UNKNOWN) {
         _media = new MediaTypeIMG();
         mt = _media->mount(f, disksize, disk_type);
         device_active = true;
-        break;
-    default:
+        Debug_printf("disk MOUNT mediatype = %d: active\n", disk_type);
+    } else {
         device_active = false;
-        break;
+        Debug_printf("disk MOUNT unknown: deactive\n");
     }
 
     return mt;
@@ -195,8 +194,7 @@ void rc2014Disk::unmount()
 {
     Debug_print("disk UNMOUNT\n");
 
-    if (_media != nullptr)
-    {
+    if (_media != nullptr) {
         _media->unmount();
         device_active = false;
     }
@@ -219,10 +217,7 @@ void rc2014Disk::rc2014_process(uint32_t commanddata, uint8_t checksum)
     if (_media == nullptr || _media->_mediatype == MEDIATYPE_UNKNOWN)
         return;
 
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
-
-    switch (cmdFrame.comnd)
-    {
+    switch (cmdFrame.comnd) {
     case RC2014_DISKCMD_READ:
         read();
         return;
@@ -230,6 +225,8 @@ void rc2014Disk::rc2014_process(uint32_t commanddata, uint8_t checksum)
         write(false);
         return;
     case RC2014_DISKCMD_STATUS:
+        status();
+        return;
     case RC2014_DISKCMD_WRITE:
         write(true);
         return;
@@ -237,9 +234,10 @@ void rc2014Disk::rc2014_process(uint32_t commanddata, uint8_t checksum)
     case RC2014_DISKCMD_FORMAT_MEDIUM:
         format();
         return;
+    default:
+        Debug_printf("rc2014_process() command not implemented. Cmd received: %02x\n", cmdFrame.comnd);
+        rc2014_response_nack();
     }
-
-    rc2014_response_nack();
 }
 
 #endif /* NEW_TARGET */
