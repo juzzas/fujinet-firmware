@@ -11,5 +11,6 @@
 #include "pinmap/lynx.h"
 #include "pinmap/rs232_rev0.h"
 #include "pinmap/rc2014sio_rev0.h"
+#include "pinmap/rc2014spi_rev0.h"
 
 #endif /* PINMAP_H */

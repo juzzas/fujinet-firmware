@@ -1,11 +1,12 @@
-#if defined(BUILD_RC2014) && defined(RC2014_BUS_SIO)
+#if defined(BUILD_RC2014) && defined(RC2014_BUS_SPI)
 
 /**
  * rc2014 Functions
  */
-#include "rc2014sio.h"
+#include "rc2014spi.h"
 
 #include "../../include/debug.h"
+#include "driver/spi_slave.h"
 
 
 #include "fnConfig.h"
@@ -13,6 +14,8 @@
 
 #include "led.h"
 #include "modem.h" 
+
+#define RC2014_SPI_HOST   SPI3_HOST
 
 
 uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
@@ -27,13 +30,8 @@ uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
 
 void virtualDevice::rc2014_send(uint8_t b)
 {
+    rc2014Bus.busTxByte(b);
 
-    while (fnSystem.digital_read(PIN_RS232_RTS) != DIGI_LOW) {
-        fnSystem.yield();
-    }
-
-    fnUartSIO.write(b);
-    fnUartSIO.flush();
 }
 
 void virtualDevice::rc2014_send_string(const std::string& str)
@@ -50,17 +48,17 @@ void virtualDevice::rc2014_send_int(const int i)
 
 void virtualDevice::rc2014_flush()
 {
-    fnUartSIO.flush();
+    rc2014Bus.busTxTransfer();
 }
 
 
 size_t virtualDevice::rc2014_send_buffer(const uint8_t *buf, unsigned short len)
 {
     for (int i = 0; i < len; i++) {
-        Debug_printf("[0x%02x] ", buf[i]);
+        //Debug_printf("[0x%02x] ", buf[i]);
         rc2014_send(buf[i]);
     }
-        Debug_printf("\n");
+    //Debug_printf("\n");
 
     return len;
 }
@@ -68,15 +66,28 @@ size_t virtualDevice::rc2014_send_buffer(const uint8_t *buf, unsigned short len)
 
 uint8_t virtualDevice::rc2014_recv()
 {
-    while (fnUartSIO.available() <= 0)
-        fnSystem.yield();
+    uint8_t val;
 
-    return fnUartSIO.read();
+    spi_slave_transaction_t t;
+
+    t.length=8;   // bits
+    t.tx_buffer=NULL;
+    t.rx_buffer=&val;
+
+    /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
+    initialized by the SPI master, however, so it will not actually happen until the master starts a hardware transaction
+    by pulling CS low and pulsing the clock etc. In this specific example, we use the handshake line, pulled up by the
+    .post_setup_cb callback that is called as soon as a transaction is ready, to let the master know it is free to transfer
+    data.
+    */
+    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
+
+    return val;
 }
 
 int virtualDevice::rc2014_recv_available()
 {
-    return fnUartSIO.available();
+    return 0;
 }
 
 bool virtualDevice::rc2014_recv_timeout(uint8_t *b, uint64_t dur)
@@ -101,10 +112,7 @@ void virtualDevice::rc2014_send_length(uint16_t l)
 
 unsigned short virtualDevice::rc2014_recv_buffer(uint8_t *buf, unsigned short len)
 {
-    while (fnUartSIO.available() <= 0)
-        fnSystem.yield();
-
-    return fnUartSIO.readBytes(buf, len);
+    return rc2014Bus.busRxBuffer(buf, len);
 }
 
 uint32_t virtualDevice::rc2014_recv_blockno()
@@ -177,7 +185,7 @@ void virtualDevice::rc2014_response_status()
 
 void virtualDevice::rc2014_handle_stream()
 {
-    fnUartSIO.flush_input();
+    //fnUartSIO.flush_input();
 }
 
 void virtualDevice::rc2014_idle()
@@ -199,14 +207,17 @@ void systemBus::_rc2014_process_cmd()
     tempFrame.commanddata = 0;
     tempFrame.checksum = 0;
 
-    size_t bytes_read = fnUartSIO.readBytes((uint8_t *)&tempFrame, sizeof(tempFrame));
+
+    size_t bytes_read = busRxBuffer((uint8_t *)&tempFrame, sizeof(tempFrame));
+    Debug_printf("(bytes_read = %d)\n", (int)bytes_read);
 
     if (bytes_read != sizeof(tempFrame))
     {
         Debug_printf("Timeout waiting for data after CMD pin asserted (bytes_read = %d)\n", (int)bytes_read);
         return;
     }
-    // Turn on the RS232 indicator LED
+
+    // Turn on the RC2014 BUS indicator LED
     fnLedManager.set(eLed::LED_BUS, true);
 
     Debug_printf("\nCF: %02x %02x %02x %02x %02x\n",
@@ -246,7 +257,7 @@ void systemBus::_rc2014_process_cmd()
             }
             else
             {
-                Debug_printf("CF for unknown device (%d)", tempFrame.device);
+                Debug_printf("CF for unknown device (%d)\n", tempFrame.device);
             }
         }
     } // valid checksum
@@ -277,6 +288,7 @@ void systemBus::service()
         Debug_println("RC2014 CMD low");
         _rc2014_process_cmd();
     }
+#if 0
     // Go check if the modem needs to read data if it's active
     else if (_streamDev != nullptr && _streamDev->device_active)
     {
@@ -286,10 +298,9 @@ void systemBus::service()
     // Neither CMD nor active streaming device, so throw out any stray input data
     {
         //Debug_println("RS232 Srvc Flush");
-        fnUartSIO.flush_input();
+        //fnUartSIO.flush_input();
     }
 
-#if 0
     // Handle interrupts from network protocols
     for (int i = 0; i < 8; i++)
     {
@@ -299,23 +310,61 @@ void systemBus::service()
 #endif
 }
 
+//Called after a transaction is queued and ready for pickup by master. We use this to set the handshake line high.
+void my_post_setup_cb(spi_slave_transaction_t *trans) {
+    Debug_println("RC2014 SPI setup");
+    gpio_set_level(PIN_CMD_RDY, 0);
+}
+
+//Called after transaction is sent/received. We use this to set the handshake line low.
+void my_post_trans_cb(spi_slave_transaction_t *trans) {
+    Debug_println("RC2014 SPI done");
+    gpio_set_level(PIN_CMD_RDY, 1);
+}
+
+
 void systemBus::setup()
 {
     Debug_println("RC2014 SETUP");
 // Set up UART
-    fnUartSIO.begin(RC2014SIO_BAUDRATE);
+    //fnUartSIO.begin(RC2014SIO_BAUDRATE);
 
     // CMD PIN
     fnSystem.set_pin_mode(PIN_CMD, gpio_mode_t::GPIO_MODE_INPUT); // There's no PULLUP/PULLDOWN on pins 34-39
-    fnSystem.set_pin_mode(PIN_RS232_RTS, gpio_mode_t::GPIO_MODE_INPUT);
-    fnSystem.set_pin_mode(PIN_RS232_CTS, gpio_mode_t::GPIO_MODE_OUTPUT);
-    fnSystem.digital_write(PIN_RS232_CTS,DIGI_LOW);
+
+    fnSystem.set_pin_mode(PIN_CMD_RDY, gpio_mode_t::GPIO_MODE_OUTPUT);
+    fnSystem.digital_write(PIN_CMD_RDY, DIGI_HIGH);
+
+
+    // Set up SPI bus
+    spi_bus_config_t bus_cfg = 
+    {
+        .mosi_io_num = PIN_BUS_DEVICE_MOSI,
+        .miso_io_num = PIN_BUS_DEVICE_MISO,
+        .sclk_io_num = PIN_BUS_DEVICE_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4000,
+        .flags=0,
+        .intr_flags=0,
+    };
+
+    spi_slave_interface_config_t slave_cfg =
+    {
+        .spics_io_num=PIN_BUS_DEVICE_CS,
+        .flags=0,
+        .queue_size=3,
+        .mode=0,
+        .post_setup_cb=my_post_setup_cb,
+        .post_trans_cb=my_post_trans_cb
+    };
+
+    esp_err_t rc = spi_slave_initialize(RC2014_SPI_HOST, &bus_cfg, &slave_cfg, SPI_DMA_DISABLED);
 
     // Create a message queue
     //qRs232Messages = xQueueCreate(4, sizeof(rs232_message_t));
 
     Debug_println("RC2014 Setup Flush");
-    fnUartSIO.flush_input();
 }
 
 void systemBus::shutdown()
@@ -418,6 +467,62 @@ void systemBus::streamDevice(uint8_t device_id)
 void systemBus::streamDeactivate()
 {
     _streamDev = nullptr;
+}
+
+size_t systemBus::busTxBuffer(const uint8_t *buf, unsigned short len)
+{
+    for (unsigned short i = 0; i < len; i++)
+        _tx_buffer.push_back(buf[i]);
+
+    return len;
+}
+
+size_t systemBus::busTxByte(const uint8_t byte)
+{
+    _tx_buffer.push_back(byte);
+
+    return 1;
+}
+
+size_t systemBus::busTxTransfer()
+{
+    spi_slave_transaction_t t;
+
+    t.length = _tx_buffer.size() * 8;   // bits
+    t.tx_buffer = _tx_buffer.data();
+    t.rx_buffer = _tx_buffer.data();
+
+    /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
+    initialized by the SPI master, however, so it will not actually happen until the master starts a hardware transaction
+    by pulling CS low and pulsing the clock etc. In this specific example, we use the handshake line, pulled up by the
+    .post_setup_cb callback that is called as soon as a transaction is ready, to let the master know it is free to transfer
+    data.
+    */
+    spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+
+    _tx_buffer.clear();
+
+    return _tx_buffer.size();
+}
+
+size_t systemBus::busRxBuffer(uint8_t *buf, unsigned short len)
+{
+    spi_slave_transaction_t t;
+
+    Debug_println("systemBus::busRxBuffer");
+
+    t.length = len * 8;   // bits
+    t.tx_buffer = buf;
+    t.rx_buffer = buf;  
+
+    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+
+    Debug_printf("systemBus::busRxBuffer trans length = %d\n", t.trans_len);
+    if (rc != ESP_OK)
+        return 0;
+
+    return t.trans_len / 8;
+
 }
 
 systemBus rc2014Bus;

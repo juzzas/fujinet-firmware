@@ -32,7 +32,6 @@ rc2014Disk::~rc2014Disk()
 void rc2014Disk::read()
 {
     Debug_print("disk READ\n");
-    rc2014_response_ack();
 
     if (_media == nullptr)
     {
@@ -40,9 +39,15 @@ void rc2014Disk::read()
         return;
     }
 
+    rc2014_response_ack();
+
     uint16_t readcount;
 
+    Debug_printf("disk READ: sector = %d\n", UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1));
+
     bool err = _media->read(UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1), &readcount);
+
+    Debug_printf("disk READ: readcount = %d\n", readcount);
 
     // Send result to Atari
     rc2014_send_buffer(_media->_media_sectorbuff, readcount);

@@ -161,7 +161,7 @@ bool MediaTypeIMG::read(uint16_t sectornum, uint16_t *readcount)
         return true;
     }
 
-    uint16_t sectorSize = DISK_BYTES_PER_SECTOR_SINGLE;
+    uint16_t sectorSize = DISK_BYTES_PER_SECTOR_BLOCK;
 
     memset(_media_sectorbuff, 0, sizeof(_media_sectorbuff));
 
@@ -215,8 +215,8 @@ bool MediaTypeIMG::write(uint16_t sectornum, bool verify)
         }
     }
     // Write the data
-    e = fwrite(_media_sectorbuff, 1, DISK_BYTES_PER_SECTOR_SINGLE, _media_fileh);
-    if (e != DISK_BYTES_PER_SECTOR_SINGLE)
+    e = fwrite(_media_sectorbuff, 1, DISK_BYTES_PER_SECTOR_BLOCK, _media_fileh);
+    if (e != DISK_BYTES_PER_SECTOR_BLOCK)
     {
         Debug_printf("::write error %d, %d\n", e, errno);
         return true;
