@@ -71,7 +71,7 @@ uint8_t virtualDevice::rc2014_recv()
     spi_slave_transaction_t t;
 
     t.length=8;   // bits
-    t.tx_buffer=NULL;
+    t.tx_buffer=&val;
     t.rx_buffer=&val;
 
     /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
@@ -214,6 +214,7 @@ void systemBus::_rc2014_process_cmd()
     if (bytes_read != sizeof(tempFrame))
     {
         Debug_printf("Timeout waiting for data after CMD pin asserted (bytes_read = %d)\n", (int)bytes_read);
+        //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
         return;
     }
 
@@ -222,9 +223,6 @@ void systemBus::_rc2014_process_cmd()
 
     Debug_printf("\nCF: %02x %02x %02x %02x %02x\n",
                  tempFrame.device, tempFrame.comnd, tempFrame.aux1, tempFrame.aux2, tempFrame.cksum);
-    // Wait for CMD line to raise again
-    while (fnSystem.digital_read(PIN_CMD) == DIGI_LOW)
-        vTaskDelay(1);
 
     uint8_t ck = rc2014_checksum((uint8_t *)&tempFrame.commanddata, sizeof(tempFrame.commanddata)); // Calculate Checksum
     if (ck == tempFrame.checksum)
@@ -266,6 +264,12 @@ void systemBus::_rc2014_process_cmd()
         Debug_printf("CHECKSUM_ERROR: Calc checksum: %02x\n",ck);
         // Switch to/from hispeed RS232 if we get enough failed frame checksums
     }
+
+    // Wait for CMD line to raise again
+    while (fnSystem.digital_read(PIN_CMD) == DIGI_LOW)
+        vTaskDelay(1);
+
+
     fnLedManager.set(eLed::LED_BUS, false);
 }
 
@@ -311,15 +315,16 @@ void systemBus::service()
 }
 
 //Called after a transaction is queued and ready for pickup by master. We use this to set the handshake line high.
+// Note: called after master asserts CS.
 void my_post_setup_cb(spi_slave_transaction_t *trans) {
-    Debug_println("RC2014 SPI setup");
-    gpio_set_level(PIN_CMD_RDY, 0);
+    gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
+    Debug_println("RC2014 SPI setup cb");
 }
 
 //Called after transaction is sent/received. We use this to set the handshake line low.
 void my_post_trans_cb(spi_slave_transaction_t *trans) {
-    Debug_println("RC2014 SPI done");
-    gpio_set_level(PIN_CMD_RDY, 1);
+    gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+    Debug_println("RC2014 SPI done cb");
 }
 
 
@@ -353,7 +358,7 @@ void systemBus::setup()
     {
         .spics_io_num=PIN_BUS_DEVICE_CS,
         .flags=0,
-        .queue_size=3,
+        .queue_size=1,
         .mode=0,
         .post_setup_cb=my_post_setup_cb,
         .post_trans_cb=my_post_trans_cb
@@ -486,7 +491,9 @@ size_t systemBus::busTxByte(const uint8_t byte)
 
 size_t systemBus::busTxTransfer()
 {
-    spi_slave_transaction_t t;
+    spi_slave_transaction_t t = {};
+
+    Debug_printf("systemBus::busTxBuffer = %d bytes\n", _tx_buffer.size());
 
     t.length = _tx_buffer.size() * 8;   // bits
     t.tx_buffer = _tx_buffer.data();
@@ -498,24 +505,32 @@ size_t systemBus::busTxTransfer()
     .post_setup_cb callback that is called as soon as a transaction is ready, to let the master know it is free to transfer
     data.
     */
-    spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+    //gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
+    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+    //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+
+    Debug_printf("systemBus::busTxBuffer trans length = %d\n", t.trans_len);
+    if (rc != ESP_OK)
+        return 0;
 
     _tx_buffer.clear();
 
-    return _tx_buffer.size();
+    return t.trans_len / 8;
 }
 
 size_t systemBus::busRxBuffer(uint8_t *buf, unsigned short len)
 {
-    spi_slave_transaction_t t;
+    spi_slave_transaction_t t = {};
 
     Debug_println("systemBus::busRxBuffer");
 
     t.length = len * 8;   // bits
     t.tx_buffer = buf;
-    t.rx_buffer = buf;  
+    t.rx_buffer = buf;
 
+    //gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
     esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+    //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 
     Debug_printf("systemBus::busRxBuffer trans length = %d\n", t.trans_len);
     if (rc != ESP_OK)

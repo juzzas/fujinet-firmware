@@ -233,6 +233,7 @@ void rc2014Fuji::rc2014_net_get_wifi_status()
 
     rc2014_send(response[0]);
     rc2014_send(rc2014_checksum(response, 1));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -643,6 +644,7 @@ void rc2014Fuji::rc2014_get_adapter_config()
 
     rc2014_send_buffer(response, response_len);
     rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 
