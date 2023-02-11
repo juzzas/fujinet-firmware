@@ -585,10 +585,10 @@ void rc2014Network::mkdir(uint16_t s)
  * @param comanddata incoming 4 bytes containing command and aux bytes
  * @param checksum 8 bit checksum
  */
-void rc2014Network::rc2014_process(uint32_t commanddata, uint8_t checksum)
+void rc2014Network::rc2014_process(rc2014Command& command)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
+    cmdFrame.commanddata = command.frame()->commanddata;
+    cmdFrame.checksum = command.frame()->checksum;
 
     switch (cmdFrame.comnd)
     {

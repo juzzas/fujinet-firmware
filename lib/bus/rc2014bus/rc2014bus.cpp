@@ -3,7 +3,7 @@
 /**
  * rc2014 Functions
  */
-#include "rc2014spi.h"
+#include "rc2014bus.h"
 
 #include "../../include/debug.h"
 #include "driver/spi_slave.h"
@@ -28,10 +28,76 @@ uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
     return checksum;
 }
 
+
+rc2014Buffer::rc2014Buffer(unsigned size) :
+        size_(size)
+{
+    buffer_.reserve(size + 1);
+}
+
+bool rc2014Buffer::validate()
+{
+    if (buffer_.size() == 0)
+        return true;
+
+    uint8_t ck = rc2014_checksum(buffer_.data(), buffer_.size() - 1);
+
+    return ck == buffer_.back();
+}
+
+uint8_t* rc2014Buffer::data()
+{
+    return buffer_.data();
+}
+
+size_t rc2014Buffer::max_size()
+{
+    return size_;
+}
+
+size_t rc2014Buffer::data_size()
+{
+    return buffer_.size();
+}
+
+uint8_t rc2014Command::device()
+{
+    return buffer_[0];
+}
+
+uint8_t rc2014Command::command()
+{
+    return buffer_[1];
+}
+
+uint16_t rc2014Command::aux()
+{
+    return (buffer_[3] << 8) + buffer_[2];
+}
+
+uint8_t rc2014Command::aux1()
+{
+    return buffer_[2];
+}
+
+uint8_t rc2014Command::aux2()
+{
+    return buffer_[3];
+}
+
+uint8_t rc2014Command::checksum()
+{
+    return buffer_[4];
+}
+
+cmdFrame_t* rc2014Command::frame()
+{
+    return (cmdFrame_t*)buffer_.data();
+}
+
 void virtualDevice::rc2014_send(uint8_t b)
 {
     rc2014Bus.busTxByte(b);
-
 }
 
 void virtualDevice::rc2014_send_string(const std::string& str)
@@ -166,13 +232,9 @@ void systemBus::wait_for_idle()
 {
 }
 
-void virtualDevice::rc2014_process(uint32_t commanddata, uint8_t checksum)
+void virtualDevice::rc2014_process(rc2014Command& cmdFrame)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
-
-
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.command());
 }
 
 void virtualDevice::rc2014_control_status()
@@ -203,15 +265,13 @@ void systemBus::_rc2014_process_cmd()
     Debug_printf("rc2014_process_cmd()\n");
 
         // Read CMD frame
-    cmdFrame_t tempFrame;
-    tempFrame.commanddata = 0;
-    tempFrame.checksum = 0;
+    rc2014Command tempFrame;
 
 
-    size_t bytes_read = busRxBuffer((uint8_t *)&tempFrame, sizeof(tempFrame));
+    size_t bytes_read = busRxBuffer(tempFrame.data(), tempFrame.max_size());
     Debug_printf("(bytes_read = %d)\n", (int)bytes_read);
 
-    if (bytes_read != sizeof(tempFrame))
+    if (bytes_read != tempFrame.max_size())
     {
         Debug_printf("Timeout waiting for data after CMD pin asserted (bytes_read = %d)\n", (int)bytes_read);
         //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
@@ -222,10 +282,9 @@ void systemBus::_rc2014_process_cmd()
     fnLedManager.set(eLed::LED_BUS, true);
 
     Debug_printf("\nCF: %02x %02x %02x %02x %02x\n",
-                 tempFrame.device, tempFrame.comnd, tempFrame.aux1, tempFrame.aux2, tempFrame.cksum);
+                 tempFrame.device(), tempFrame.command(), tempFrame.aux1(), tempFrame.aux2(), tempFrame.checksum());
 
-    uint8_t ck = rc2014_checksum((uint8_t *)&tempFrame.commanddata, sizeof(tempFrame.commanddata)); // Calculate Checksum
-    if (ck == tempFrame.checksum)
+    if (tempFrame.validate())
     {
 #if 0
         if (tempFrame.device == RC2014_DEVICEID_DISK && _fujiDev != nullptr && _fujiDev->boot_config)
@@ -249,19 +308,19 @@ void systemBus::_rc2014_process_cmd()
         {
             // find device, ack and pass control
             // or go back to WAIT
-            auto devp = _daisyChain.find(tempFrame.device);
+            auto devp = _daisyChain.find(tempFrame.device());
             if (devp != _daisyChain.end()) {
-                (*devp).second->rc2014_process(tempFrame.commanddata, tempFrame.checksum);
+                (*devp).second->rc2014_process(tempFrame);
             }
             else
             {
-                Debug_printf("CF for unknown device (%d)\n", tempFrame.device);
+                Debug_printf("CF for unknown device (%d)\n", tempFrame.device());
             }
         }
     } // valid checksum
     else
     {
-        Debug_printf("CHECKSUM_ERROR: Calc checksum: %02x\n",ck);
+        Debug_printf("CHECKSUM_ERROR: Calc checksum: %02x\n", tempFrame.checksum());
         // Switch to/from hispeed RS232 if we get enough failed frame checksums
     }
 

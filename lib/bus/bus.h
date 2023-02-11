@@ -42,7 +42,7 @@
 #endif
 
 #ifdef BUILD_RC2014
-#include "rc2014sio/rc2014sio.h"
+#include "rc2014bus/rc2014bus.h"
 #define SYSTEM_BUS rc2014Bus
 #endif
 

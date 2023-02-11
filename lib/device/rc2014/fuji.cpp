@@ -1049,10 +1049,10 @@ rc2014Disk *rc2014Fuji::bootdisk()
 }
 
 
-void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
+void rc2014Fuji::rc2014_process(rc2014Command& command)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
+    cmdFrame.commanddata = command.frame()->commanddata;
+    cmdFrame.checksum = command.frame()->checksum;
 
     switch (cmdFrame.comnd)
     {

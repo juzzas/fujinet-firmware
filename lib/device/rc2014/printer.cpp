@@ -164,10 +164,10 @@ void rc2014Printer::stream()
     rc2014_send_complete();
 }
 
-void rc2014Printer::rc2014_process(uint32_t commanddata, uint8_t checksum)
+void rc2014Printer::rc2014_process(rc2014Command& command)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
+    cmdFrame.commanddata = command.frame()->commanddata;
+    cmdFrame.checksum = command.frame()->checksum;
 
     switch (cmdFrame.comnd)
     {

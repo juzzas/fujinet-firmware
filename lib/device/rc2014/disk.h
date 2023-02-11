@@ -25,7 +25,7 @@ private:
 
     bool write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors);
 
-    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
+    void rc2014_process(rc2014Command&) override;
 
 public:
     rc2014Disk();

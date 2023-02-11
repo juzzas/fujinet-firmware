@@ -124,7 +124,7 @@ protected:
     void rc2014_control_send();
     void rc2014_control_clr();
 
-    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
+    void rc2014_process(rc2014Command&) override;
 
     void shutdown() override;
 

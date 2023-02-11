@@ -214,15 +214,12 @@ bool rc2014Disk::write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors)
 }
 
 
-void rc2014Disk::rc2014_process(uint32_t commanddata, uint8_t checksum)
+void rc2014Disk::rc2014_process(rc2014Command& cmdFrame)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
-
     if (_media == nullptr || _media->_mediatype == MEDIATYPE_UNKNOWN)
         return;
 
-    switch (cmdFrame.comnd) {
+    switch (cmdFrame.command()) {
     case RC2014_DISKCMD_READ:
         read();
         return;
@@ -240,7 +237,7 @@ void rc2014Disk::rc2014_process(uint32_t commanddata, uint8_t checksum)
         format();
         return;
     default:
-        Debug_printf("rc2014_process() command not implemented. Cmd received: %02x\n", cmdFrame.comnd);
+        Debug_printf("rc2014_process() command not implemented. Cmd received: %02x\n", cmdFrame.command());
         rc2014_response_nack();
     }
 }

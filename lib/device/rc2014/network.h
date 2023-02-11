@@ -108,7 +108,7 @@ public:
      * Process incoming rc2014 command for device 0x7X
      * @param b The incoming command byte
      */
-    virtual void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
+    virtual void rc2014_process(rc2014Command&) override;
 
     virtual void del(uint16_t s);
     virtual void rename(uint16_t s);

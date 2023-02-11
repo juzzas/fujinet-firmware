@@ -48,6 +48,43 @@ union cmdFrame_t
     } __attribute__((packed));
 };
 
+
+// buffer with inbuilt checksum
+// -- instantiate with desired buffer size + 1 for checksum
+class rc2014Buffer {
+public:
+    explicit rc2014Buffer(size_t size);
+
+    bool validate();
+    uint8_t* data();
+    size_t max_size();
+    size_t data_size();
+
+protected:
+    std::vector<uint8_t> buffer_;
+    size_t size_;
+};
+
+
+class rc2014Command : public rc2014Buffer{
+public:
+    rc2014Command() : rc2014Buffer(5) {};
+
+
+    uint8_t device();
+    uint8_t command();
+
+    uint16_t aux();
+
+    uint8_t aux1();
+    uint8_t aux2();
+
+    uint8_t checksum();
+
+    cmdFrame_t* frame();
+};
+
+
 class systemBus;
 class rc2014Fuji;     // declare here so can reference it, but define in fuji.h
 class rc2014CPM;
@@ -189,7 +226,7 @@ protected:
      * @brief All RS232 devices repeatedly call this routine to fan out to other methods for each command. 
      * This is typcially implemented as a switch() statement.
      */
-    virtual void rc2014_process(uint32_t commanddata, uint8_t checksum) = 0;
+    virtual void rc2014_process(rc2014Command&) = 0;
 
     /**
      * @brief Do any tasks that can only be done when the bus is quiet

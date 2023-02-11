@@ -1,5 +1,6 @@
 #ifdef BUILD_RC2014
 
+#include "bus.h"
 #include "modem.h"
 
 #include "../../../include/debug.h"
@@ -1224,12 +1225,9 @@ void rc2014Modem::shutdown()
 /*
   Process command
 */
-void rc2014Modem::rc2014_process(uint32_t commanddata, uint8_t checksum)
+void rc2014Modem::rc2014_process(rc2014Command& cmdFrame)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
-
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.command());
 }
 
 #endif /* NEW_TARGET */
