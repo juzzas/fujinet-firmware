@@ -17,6 +17,10 @@
 
 #define RC2014_SPI_HOST   SPI3_HOST
 
+static std::array<uint8_t, 1024> L_rx_buffer;
+static std::array<uint8_t, 1024> L_tx_buffer;
+static unsigned int L_tx_buffer_index;
+
 
 uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
 {
@@ -28,17 +32,25 @@ uint8_t rc2014_checksum(uint8_t *buf, unsigned short len)
     return checksum;
 }
 
-
 rc2014Buffer::rc2014Buffer(unsigned size) :
-        size_(size)
+        size_(size),
+        dirty_(true)
 {
     buffer_.reserve(size + 1);
+    buffer_.push_back(0); // set the first checksum
 }
 
 bool rc2014Buffer::validate()
 {
     if (buffer_.size() == 0)
         return true;
+
+    if (buffer_.size() == 1) {
+        if (buffer_.back() == 0) {
+            return true;
+        }
+        return false;
+    } 
 
     uint8_t ck = rc2014_checksum(buffer_.data(), buffer_.size() - 1);
 
@@ -60,45 +72,24 @@ size_t rc2014Buffer::data_size()
     return buffer_.size();
 }
 
-uint8_t rc2014Command::device()
+void rc2014Buffer::append(uint8_t val)
 {
-    return buffer_[0];
-}
-
-uint8_t rc2014Command::command()
-{
-    return buffer_[1];
-}
-
-uint16_t rc2014Command::aux()
-{
-    return (buffer_[3] << 8) + buffer_[2];
-}
-
-uint8_t rc2014Command::aux1()
-{
-    return buffer_[2];
-}
-
-uint8_t rc2014Command::aux2()
-{
-    return buffer_[3];
-}
-
-uint8_t rc2014Command::checksum()
-{
-    return buffer_[4];
-}
-
-cmdFrame_t* rc2014Command::frame()
-{
-    return (cmdFrame_t*)buffer_.data();
+    buffer_.back() = val;
+    buffer_.push_back(rc2014_checksum(buffer_.data(), buffer_.size() - 1));
 }
 
 void virtualDevice::rc2014_send(uint8_t b)
 {
     rc2014Bus.busTxByte(b);
 }
+
+void virtualDevice::rc2014_send(rc2014Buffer& buffer)
+{
+    for (int i = 0; i < buffer.data_size(); i++) {
+        rc2014Bus.busTxByte(buffer.data()[i]);
+    }
+}
+
 
 void virtualDevice::rc2014_send_string(const std::string& str)
 {
@@ -129,26 +120,11 @@ size_t virtualDevice::rc2014_send_buffer(const uint8_t *buf, unsigned short len)
     return len;
 }
 
-
 uint8_t virtualDevice::rc2014_recv()
 {
     uint8_t val;
 
-    spi_slave_transaction_t t;
-
-    t.length=8;   // bits
-    t.tx_buffer=&val;
-    t.rx_buffer=&val;
-
-    /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
-    initialized by the SPI master, however, so it will not actually happen until the master starts a hardware transaction
-    by pulling CS low and pulsing the clock etc. In this specific example, we use the handshake line, pulled up by the
-    .post_setup_cb callback that is called as soon as a transaction is ready, to let the master know it is free to transfer
-    data.
-    */
-    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
-
-    return val;
+    return rc2014Bus.busRxBuffer(&val, 1);
 }
 
 int virtualDevice::rc2014_recv_available()
@@ -232,9 +208,13 @@ void systemBus::wait_for_idle()
 {
 }
 
-void virtualDevice::rc2014_process(rc2014Command& cmdFrame)
+void virtualDevice::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.command());
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
+
+
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
 }
 
 void virtualDevice::rc2014_control_status()
@@ -265,13 +245,16 @@ void systemBus::_rc2014_process_cmd()
     Debug_printf("rc2014_process_cmd()\n");
 
         // Read CMD frame
-    rc2014Command tempFrame;
+    cmdFrame_t tempFrame;
+    tempFrame.commanddata = 0;
+    tempFrame.checksum = 0;
 
 
-    size_t bytes_read = busRxBuffer(tempFrame.data(), tempFrame.max_size());
+    size_t bytes_read = busRxBuffer(L_rx_buffer.data(), sizeof(cmdFrame_t));
     Debug_printf("(bytes_read = %d)\n", (int)bytes_read);
+    memcpy(&tempFrame, L_rx_buffer.data(), sizeof(cmdFrame_t));
 
-    if (bytes_read != tempFrame.max_size())
+    if (bytes_read != sizeof(tempFrame))
     {
         Debug_printf("Timeout waiting for data after CMD pin asserted (bytes_read = %d)\n", (int)bytes_read);
         //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
@@ -282,9 +265,10 @@ void systemBus::_rc2014_process_cmd()
     fnLedManager.set(eLed::LED_BUS, true);
 
     Debug_printf("\nCF: %02x %02x %02x %02x %02x\n",
-                 tempFrame.device(), tempFrame.command(), tempFrame.aux1(), tempFrame.aux2(), tempFrame.checksum());
+                 tempFrame.device, tempFrame.comnd, tempFrame.aux1, tempFrame.aux2, tempFrame.cksum);
 
-    if (tempFrame.validate())
+    uint8_t ck = rc2014_checksum((uint8_t *)&tempFrame.commanddata, sizeof(tempFrame.commanddata)); // Calculate Checksum
+    if (ck == tempFrame.checksum)
     {
 #if 0
         if (tempFrame.device == RC2014_DEVICEID_DISK && _fujiDev != nullptr && _fujiDev->boot_config)
@@ -308,25 +292,26 @@ void systemBus::_rc2014_process_cmd()
         {
             // find device, ack and pass control
             // or go back to WAIT
-            auto devp = _daisyChain.find(tempFrame.device());
+            auto devp = _daisyChain.find(tempFrame.device);
             if (devp != _daisyChain.end()) {
-                (*devp).second->rc2014_process(tempFrame);
+                (*devp).second->rc2014_process(tempFrame.commanddata, tempFrame.checksum);
             }
             else
             {
-                Debug_printf("CF for unknown device (%d)\n", tempFrame.device());
+                Debug_printf("CF for unknown device (%d)\n", tempFrame.device);
             }
         }
     } // valid checksum
     else
     {
-        Debug_printf("CHECKSUM_ERROR: Calc checksum: %02x\n", tempFrame.checksum());
+        Debug_printf("CHECKSUM_ERROR: Calc checksum: %02x\n",ck);
         // Switch to/from hispeed RS232 if we get enough failed frame checksums
     }
 
     // Wait for CMD line to raise again
     while (fnSystem.digital_read(PIN_CMD) == DIGI_LOW)
         vTaskDelay(1);
+
 
 
     fnLedManager.set(eLed::LED_BUS, false);
@@ -373,17 +358,15 @@ void systemBus::service()
 #endif
 }
 
-//Called after a transaction is queued and ready for pickup by master. We use this to set the handshake line high.
+//Called after a transaction is queued and ready for pickup by master.
 // Note: called after master asserts CS.
 void my_post_setup_cb(spi_slave_transaction_t *trans) {
     gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
-    Debug_println("RC2014 SPI setup cb");
 }
 
-//Called after transaction is sent/received. We use this to set the handshake line low.
+//Called after transaction is sent/received.
 void my_post_trans_cb(spi_slave_transaction_t *trans) {
     gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
-    Debug_println("RC2014 SPI done cb");
 }
 
 
@@ -424,6 +407,9 @@ void systemBus::setup()
     };
 
     esp_err_t rc = spi_slave_initialize(RC2014_SPI_HOST, &bus_cfg, &slave_cfg, SPI_DMA_DISABLED);
+    if (rc != ESP_OK) {
+        Debug_println("RC2014 unable to initialise bus SPI Flush");
+    }
 
     // Create a message queue
     //qRs232Messages = xQueueCreate(4, sizeof(rs232_message_t));
@@ -535,15 +521,18 @@ void systemBus::streamDeactivate()
 
 size_t systemBus::busTxBuffer(const uint8_t *buf, unsigned short len)
 {
-    for (unsigned short i = 0; i < len; i++)
-        _tx_buffer.push_back(buf[i]);
+    for (unsigned short i = 0; i < len; i++) {
+        L_tx_buffer[L_tx_buffer_index] = buf[i];
+        L_tx_buffer_index++;
+    }
 
     return len;
 }
 
 size_t systemBus::busTxByte(const uint8_t byte)
 {
-    _tx_buffer.push_back(byte);
+    L_tx_buffer[L_tx_buffer_index] = byte;
+    L_tx_buffer_index++;
 
     return 1;
 }
@@ -552,11 +541,12 @@ size_t systemBus::busTxTransfer()
 {
     spi_slave_transaction_t t = {};
 
-    Debug_printf("systemBus::busTxBuffer = %d bytes\n", _tx_buffer.size());
+    Debug_printf("systemBus::busTxTransfer = %d bytes\n", L_tx_buffer_index);
 
-    t.length = _tx_buffer.size() * 8;   // bits
-    t.tx_buffer = _tx_buffer.data();
-    t.rx_buffer = _tx_buffer.data();
+    t.length = L_tx_buffer_index * 8;   // bits
+    Debug_printf("systemBus::busTxTransfer = %d bits\n", t.length);
+    t.tx_buffer = L_tx_buffer.data();
+    t.rx_buffer = L_tx_buffer.data();
 
     /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
     initialized by the SPI master, however, so it will not actually happen until the master starts a hardware transaction
@@ -568,12 +558,14 @@ size_t systemBus::busTxTransfer()
     esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
     //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 
-    Debug_printf("systemBus::busTxBuffer trans length = %d\n", t.trans_len);
+    Debug_printf("systemBus::busTxTransfer trans length = %d\n", t.trans_len);
+    if (t.trans_len == 0)
+        gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+
     if (rc != ESP_OK)
         return 0;
 
-    _tx_buffer.clear();
-
+    L_tx_buffer_index = 0;
     return t.trans_len / 8;
 }
 
@@ -582,6 +574,7 @@ size_t systemBus::busRxBuffer(uint8_t *buf, unsigned short len)
     spi_slave_transaction_t t = {};
 
     Debug_println("systemBus::busRxBuffer");
+    fnUartDebug.flush();
 
     t.length = len * 8;   // bits
     t.tx_buffer = buf;
@@ -592,8 +585,13 @@ size_t systemBus::busRxBuffer(uint8_t *buf, unsigned short len)
     //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 
     Debug_printf("systemBus::busRxBuffer trans length = %d\n", t.trans_len);
-    if (rc != ESP_OK)
+    if (t.trans_len == 0)
+        gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+
+    if (rc != ESP_OK) {
+        Debug_printf("systemBus::busRxBuffer rc = %d\n", rc);
         return 0;
+    }
 
     return t.trans_len / 8;
 

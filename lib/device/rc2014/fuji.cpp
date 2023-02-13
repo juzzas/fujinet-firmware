@@ -234,7 +234,6 @@ void rc2014Fuji::rc2014_net_get_wifi_status()
     rc2014_send(response[0]);
     rc2014_send(rc2014_checksum(response, 1));
     rc2014_flush();
-    
     rc2014_send_complete();
 }
 
@@ -1049,10 +1048,10 @@ rc2014Disk *rc2014Fuji::bootdisk()
 }
 
 
-void rc2014Fuji::rc2014_process(rc2014Command& command)
+void rc2014Fuji::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
-    cmdFrame.commanddata = command.frame()->commanddata;
-    cmdFrame.checksum = command.frame()->checksum;
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
 
     switch (cmdFrame.comnd)
     {

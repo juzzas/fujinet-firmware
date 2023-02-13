@@ -17,7 +17,7 @@ class rc2014CPM : public virtualDevice
 private:
 
     void rc2014_status();
-    void rc2014_process(rc2014Command&) override;
+    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
 
 public:
     bool cpmActive = false; 

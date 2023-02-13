@@ -31,7 +31,7 @@ protected:
     virtual void ready();
     virtual void stream();
 
-    void rc2014_process(rc2014Command&) override;
+    void rc2014_process(uint32_t commanddata, uint8_t checksum) override;
     void rc2014_handle_stream() override;
     void shutdown() override;
 

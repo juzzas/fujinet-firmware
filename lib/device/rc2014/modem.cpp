@@ -1225,9 +1225,12 @@ void rc2014Modem::shutdown()
 /*
   Process command
 */
-void rc2014Modem::rc2014_process(rc2014Command& cmdFrame)
+void rc2014Modem::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
-    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.command());
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
+
+    fnUartDebug.printf("rc2014_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
 }
 
 #endif /* NEW_TARGET */

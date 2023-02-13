@@ -59,31 +59,13 @@ public:
     uint8_t* data();
     size_t max_size();
     size_t data_size();
+    void append(uint8_t val);
 
 protected:
     std::vector<uint8_t> buffer_;
     size_t size_;
+    bool dirty_;
 };
-
-
-class rc2014Command : public rc2014Buffer{
-public:
-    rc2014Command() : rc2014Buffer(5) {};
-
-
-    uint8_t device();
-    uint8_t command();
-
-    uint16_t aux();
-
-    uint8_t aux1();
-    uint8_t aux2();
-
-    uint8_t checksum();
-
-    cmdFrame_t* frame();
-};
-
 
 class systemBus;
 class rc2014Fuji;     // declare here so can reference it, but define in fuji.h
@@ -113,6 +95,7 @@ protected:
      * @return none
      */
     void rc2014_send(uint8_t b);
+    void rc2014_send(rc2014Buffer& buffer);
 
     /**
      * @brief Send string buffer to rc2014
@@ -226,7 +209,7 @@ protected:
      * @brief All RS232 devices repeatedly call this routine to fan out to other methods for each command. 
      * This is typcially implemented as a switch() statement.
      */
-    virtual void rc2014_process(rc2014Command&) = 0;
+    virtual void rc2014_process(uint32_t commanddata, uint8_t checksum) = 0;
 
     /**
      * @brief Do any tasks that can only be done when the bus is quiet
@@ -285,8 +268,6 @@ class systemBus
 private:
     std::map<uint8_t, virtualDevice *> _daisyChain;
     virtualDevice *_streamDev = nullptr;
-
-    std::vector<uint8_t> _tx_buffer;
 
     void _rc2014_process_cmd();
     void _rc2014_process_queue();

@@ -69,10 +69,10 @@ void rc2014CPM::init_cpm(int baud)
     memset(pattern, 0, sizeof(pattern));
 }
 
-void rc2014CPM::rc2014_process(rc2014Command& command)
+void rc2014CPM::rc2014_process(uint32_t commanddata, uint8_t checksum)
 {
-    cmdFrame.commanddata = command.frame()->commanddata;
-    cmdFrame.checksum = command.frame()->checksum;
+    cmdFrame.commanddata = commanddata;
+    cmdFrame.checksum = checksum;
 
     switch (cmdFrame.comnd)
     {
