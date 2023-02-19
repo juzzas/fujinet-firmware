@@ -299,6 +299,8 @@ void systemBus::_rc2014_process_cmd()
             else
             {
                 Debug_printf("CF for unknown device (%d)\n", tempFrame.device);
+                busTxByte('N');
+                busTxTransfer();
             }
         }
     } // valid checksum
@@ -368,6 +370,28 @@ void my_post_setup_cb(spi_slave_transaction_t *trans) {
 void my_post_trans_cb(spi_slave_transaction_t *trans) {
     gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 }
+    
+spi_bus_config_t bus_cfg = 
+{
+    .mosi_io_num = PIN_BUS_DEVICE_MOSI,
+    .miso_io_num = PIN_BUS_DEVICE_MISO,
+    .sclk_io_num = PIN_BUS_DEVICE_SCK,
+    .quadwp_io_num = -1,
+    .quadhd_io_num = -1,
+    .max_transfer_sz = 4096,
+    .flags=0,
+    .intr_flags=0,
+};
+
+spi_slave_interface_config_t slave_cfg =
+{
+    .spics_io_num=PIN_BUS_DEVICE_CS,
+    .flags=0,
+    .queue_size=1,
+    .mode=0,
+    .post_setup_cb=my_post_setup_cb,
+    .post_trans_cb=my_post_trans_cb
+};
 
 
 void systemBus::setup()
@@ -384,27 +408,6 @@ void systemBus::setup()
 
 
     // Set up SPI bus
-    spi_bus_config_t bus_cfg = 
-    {
-        .mosi_io_num = PIN_BUS_DEVICE_MOSI,
-        .miso_io_num = PIN_BUS_DEVICE_MISO,
-        .sclk_io_num = PIN_BUS_DEVICE_SCK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
-        .flags=0,
-        .intr_flags=0,
-    };
-
-    spi_slave_interface_config_t slave_cfg =
-    {
-        .spics_io_num=PIN_BUS_DEVICE_CS,
-        .flags=0,
-        .queue_size=1,
-        .mode=0,
-        .post_setup_cb=my_post_setup_cb,
-        .post_trans_cb=my_post_trans_cb
-    };
 
     esp_err_t rc = spi_slave_initialize(RC2014_SPI_HOST, &bus_cfg, &slave_cfg, SPI_DMA_DISABLED);
     if (rc != ESP_OK) {
@@ -542,11 +545,14 @@ size_t systemBus::busTxTransfer()
     spi_slave_transaction_t t = {};
 
     Debug_printf("systemBus::busTxTransfer = %d bytes\n", L_tx_buffer_index);
+    for (int i = 0; i < L_tx_buffer_index; i++)
+        Debug_printf("[0x%02x] ", L_tx_buffer[i]);
+    Debug_printf("\n");
 
     t.length = L_tx_buffer_index * 8;   // bits
     Debug_printf("systemBus::busTxTransfer = %d bits\n", t.length);
     t.tx_buffer = L_tx_buffer.data();
-    t.rx_buffer = L_tx_buffer.data();
+    t.rx_buffer = L_rx_buffer.data();
 
     /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
     initialized by the SPI master, however, so it will not actually happen until the master starts a hardware transaction
@@ -555,17 +561,18 @@ size_t systemBus::busTxTransfer()
     data.
     */
     //gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
-    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
     //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 
     Debug_printf("systemBus::busTxTransfer trans length = %d\n", t.trans_len);
-    if (t.trans_len == 0)
-        gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+    //if (t.trans_len == 0) {
+    //    gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+    //}
+    L_tx_buffer_index = 0;
 
     if (rc != ESP_OK)
         return 0;
 
-    L_tx_buffer_index = 0;
     return t.trans_len / 8;
 }
 
@@ -577,11 +584,11 @@ size_t systemBus::busRxBuffer(uint8_t *buf, unsigned short len)
     fnUartDebug.flush();
 
     t.length = len * 8;   // bits
-    t.tx_buffer = buf;
+    t.tx_buffer = L_tx_buffer.data(); //buf;
     t.rx_buffer = buf;
 
     //gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
-    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, 200 /*portMAX_DELAY*/);
+    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
     //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 
     Debug_printf("systemBus::busRxBuffer trans length = %d\n", t.trans_len);
