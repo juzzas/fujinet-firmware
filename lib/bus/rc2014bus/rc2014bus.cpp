@@ -244,7 +244,7 @@ void systemBus::_rc2014_process_cmd()
 {
     Debug_printf("rc2014_process_cmd()\n");
 
-        // Read CMD frame
+    // Read CMD frame
     cmdFrame_t tempFrame;
     tempFrame.commanddata = 0;
     tempFrame.checksum = 0;
@@ -307,7 +307,8 @@ void systemBus::_rc2014_process_cmd()
     else
     {
         Debug_printf("CHECKSUM_ERROR: Calc checksum: %02x\n",ck);
-        // Switch to/from hispeed RS232 if we get enough failed frame checksums
+        busTxByte('E');
+        busTxTransfer();
     }
 
     // Wait for CMD line to raise again
@@ -371,34 +372,9 @@ void my_post_trans_cb(spi_slave_transaction_t *trans) {
     gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
 }
     
-spi_bus_config_t bus_cfg = 
-{
-    .mosi_io_num = PIN_BUS_DEVICE_MOSI,
-    .miso_io_num = PIN_BUS_DEVICE_MISO,
-    .sclk_io_num = PIN_BUS_DEVICE_SCK,
-    .quadwp_io_num = -1,
-    .quadhd_io_num = -1,
-    .max_transfer_sz = 4096,
-    .flags=0,
-    .intr_flags=0,
-};
-
-spi_slave_interface_config_t slave_cfg =
-{
-    .spics_io_num=PIN_BUS_DEVICE_CS,
-    .flags=0,
-    .queue_size=1,
-    .mode=0,
-    .post_setup_cb=my_post_setup_cb,
-    .post_trans_cb=my_post_trans_cb
-};
-
-
 void systemBus::setup()
 {
     Debug_println("RC2014 SETUP");
-// Set up UART
-    //fnUartSIO.begin(RC2014SIO_BAUDRATE);
 
     // CMD PIN
     fnSystem.set_pin_mode(PIN_CMD, gpio_mode_t::GPIO_MODE_INPUT); // There's no PULLUP/PULLDOWN on pins 34-39
@@ -408,6 +384,27 @@ void systemBus::setup()
 
 
     // Set up SPI bus
+    spi_bus_config_t bus_cfg = 
+    {
+        .mosi_io_num = PIN_BUS_DEVICE_MOSI,
+        .miso_io_num = PIN_BUS_DEVICE_MISO,
+        .sclk_io_num = PIN_BUS_DEVICE_SCK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+        .flags=0,
+        .intr_flags=0,
+    };
+
+    spi_slave_interface_config_t slave_cfg =
+    {
+        .spics_io_num=PIN_BUS_DEVICE_CS,
+        .flags=0,
+        .queue_size=1,
+        .mode=0,
+        .post_setup_cb=my_post_setup_cb,
+        .post_trans_cb=my_post_trans_cb
+    };
 
     esp_err_t rc = spi_slave_initialize(RC2014_SPI_HOST, &bus_cfg, &slave_cfg, SPI_DMA_DISABLED);
     if (rc != ESP_OK) {
