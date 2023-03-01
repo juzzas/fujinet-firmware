@@ -311,12 +311,6 @@ void systemBus::_rc2014_process_cmd()
         busTxTransfer();
     }
 
-    // Wait for CMD line to raise again
-    while (fnSystem.digital_read(PIN_CMD) == DIGI_LOW)
-        vTaskDelay(1);
-
-
-
     fnLedManager.set(eLed::LED_BUS, false);
 }
 
@@ -546,25 +540,28 @@ size_t systemBus::busTxTransfer()
         Debug_printf("[0x%02x] ", L_tx_buffer[i]);
     Debug_printf("\n");
 
-    t.length = L_tx_buffer_index * 8;   // bits
-    Debug_printf("systemBus::busTxTransfer = %d bits\n", t.length);
-    t.tx_buffer = L_tx_buffer.data();
-    t.rx_buffer = L_rx_buffer.data();
+    unsigned int i = 0;
+    esp_err_t rc = ESP_OK;
 
-    /* This call enables the SPI slave interface to send/receive to the sendbuf and recvbuf. The transaction is
-    initialized by the SPI master, however, so it will not actually happen until the master starts a hardware transaction
-    by pulling CS low and pulsing the clock etc. In this specific example, we use the handshake line, pulled up by the
-    .post_setup_cb callback that is called as soon as a transaction is ready, to let the master know it is free to transfer
-    data.
-    */
-    //gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
-    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
-    //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+    do {
+        t.tx_buffer = &L_tx_buffer[i];
+        t.rx_buffer = &L_rx_buffer[i];
 
-    Debug_printf("systemBus::busTxTransfer trans length = %d\n", t.trans_len);
-    //if (t.trans_len == 0) {
-    //    gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
-    //}
+        if ((L_tx_buffer_index - i) > 64) {
+            t.length = 64 * 8;   // bits
+            Debug_printf("systemBus::busTxTransfer[%u] = %d bits\n", i, t.length);
+            i += 64;
+        } else {
+            unsigned int len = L_tx_buffer_index - i;
+            t.length = len * 8;   // bits
+            Debug_printf("systemBus::busTxTransfer[%u] = %d bits\n", i, t.length);
+            i += len;
+        }
+
+        rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
+        Debug_printf("systemBus::busTxTransfer trans length = %d\n", t.trans_len);
+    } while ((rc == ESP_OK) && (i < L_tx_buffer_index));
+
     L_tx_buffer_index = 0;
 
     if (rc != ESP_OK)
@@ -577,20 +574,28 @@ size_t systemBus::busRxBuffer(uint8_t *buf, unsigned short len)
 {
     spi_slave_transaction_t t = {};
 
-    Debug_println("systemBus::busRxBuffer");
-    fnUartDebug.flush();
+    unsigned int i = 0;
+    esp_err_t rc = ESP_OK;
 
-    t.length = len * 8;   // bits
-    t.tx_buffer = L_tx_buffer.data(); //buf;
-    t.rx_buffer = buf;
 
-    //gpio_set_level(PIN_CMD_RDY, DIGI_LOW);
-    esp_err_t rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
-    //gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+    do {
+        t.tx_buffer = &L_tx_buffer[i];
+        t.rx_buffer = &buf[i];
 
-    Debug_printf("systemBus::busRxBuffer trans length = %d\n", t.trans_len);
-    if (t.trans_len == 0)
-        gpio_set_level(PIN_CMD_RDY, DIGI_HIGH);
+        if ((len - i) > 64) {
+            t.length = 64 * 8;   // bits
+            Debug_printf("systemBus::busRxTransfer[%u] = %d bits\n", i, t.length);
+            i += 64;
+        } else {
+            unsigned int rlen = len - i;
+            t.length = rlen * 8;   // bits
+            Debug_printf("systemBus::busRxTransfer[%u] = %d bits\n", i, t.length);
+            i += rlen;
+        }
+
+        rc = spi_slave_transmit(RC2014_SPI_HOST, &t, portMAX_DELAY);
+        Debug_printf("systemBus::busRxTransfer trans length = %d\n", t.trans_len);
+    } while ((rc == ESP_OK) && (i < len));
 
     if (rc != ESP_OK) {
         Debug_printf("systemBus::busRxBuffer rc = %d\n", rc);

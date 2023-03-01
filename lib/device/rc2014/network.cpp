@@ -78,7 +78,7 @@ void rc2014Network::open()
 
     memset(response,0,sizeof(response));
     rc2014_recv_buffer(response, 256);
-    uint8_t ck = rc2014_recv(); // checksum
+    // uint8_t ck = rc2014_recv(); // checksum
 
     Debug_printf("rc2014Network::open url %s\n", response);
     
@@ -204,7 +204,7 @@ void rc2014Network::write()
     uint16_t num_bytes = (cmdFrame.aux2 << 8) + cmdFrame.aux1;
 
     rc2014_recv_buffer(response, num_bytes);
-    rc2014_recv(); // CK
+    // rc2014_recv(); // CK
 
     rc2014_response_ack();
     
@@ -245,7 +245,8 @@ void rc2014Network::read()
     err = read_channel(num_bytes);
 
     rc2014_send_buffer((uint8_t *)receiveBuffer->data(), num_bytes);
-    rc2014_send(rc2014_checksum((uint8_t *)receiveBuffer->data(), num_bytes));
+    // rc2014_send(rc2014_checksum((uint8_t *)receiveBuffer->data(), num_bytes));
+    rc2014_flush();
     receiveBuffer->erase(0, num_bytes);
 
     Debug_printf("rc2014Network::read sent %u bytes\n", num_bytes);
@@ -314,7 +315,8 @@ void rc2014Network::status()
     //receiveMode = STATUS;
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 

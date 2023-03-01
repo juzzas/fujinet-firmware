@@ -49,9 +49,10 @@ void rc2014Disk::read()
 
     Debug_printf("disk READ: readcount = %d\n", readcount);
 
-    // Send result to Atari
+    // Send result to RC2014
     rc2014_send_buffer(_media->_media_sectorbuff, readcount);
-    rc2014_send(rc2014_checksum(_media->_media_sectorbuff, readcount));
+    // rc2014_send(rc2014_checksum(_media->_media_sectorbuff, readcount));
+    rc2014_flush();
 
     rc2014_send_complete();
 }
@@ -70,16 +71,16 @@ void rc2014Disk::write(bool verify)
         memset(_media->_media_sectorbuff, 0, DISK_BYTES_PER_SECTOR_SINGLE);
 
         rc2014_recv_buffer(_media->_media_sectorbuff, sectorSize);
-        uint8_t ck = rc2014_recv(); // ck
+        // uint8_t ck = rc2014_recv(); // ck
 
-        if (ck == rc2014_checksum(_media->_media_sectorbuff, sectorSize))
-        {
+        // if (ck == rc2014_checksum(_media->_media_sectorbuff, sectorSize))
+        // {
             if (_media->write(sectorNum, verify) == false)
             {
                 rc2014_send_complete();
                 return;
             }
-        }
+        // }
     }
 
     rc2014_send_error();
@@ -137,7 +138,8 @@ void rc2014Disk::status()
     Debug_printf("response: 0x%02x, 0x%02x, 0x%02x\n", _status[0], _status[1], _status[2]);
 
     rc2014_send_buffer(_status, sizeof(_status));
-    rc2014_send(rc2014_checksum(_status, sizeof(_status)));
+    // rc2014_send(rc2014_checksum(_status, sizeof(_status)));
+    rc2014_flush();
 
     rc2014_send_complete();
 }
@@ -160,7 +162,8 @@ void rc2014Disk::format()
 
     // Send to computer
     rc2014_send_buffer(_media->_media_sectorbuff, responsesize);
-    rc2014_send(rc2014_checksum(_media->_media_sectorbuff, responsesize));
+    // rc2014_send(rc2014_checksum(_media->_media_sectorbuff, responsesize));
+    rc2014_flush();
 
     rc2014_send_complete();
 }

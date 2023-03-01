@@ -15,6 +15,9 @@
 
 #define ADDITIONAL_DETAILS_BYTES 12
 
+// TODO:
+// - refactor rc2014_new_disk() before use
+
 rc2014Fuji theFuji;        // global fuji device object
 rc2014Network *theNetwork; // global network device object (temporary)
 rc2014Printer *thePrinter; // global printer
@@ -105,7 +108,8 @@ void rc2014Fuji::rc2014_net_scan_networks()
     response_len = 1;
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -139,7 +143,8 @@ void rc2014Fuji::rc2014_net_scan_result()
     response_len = 33;
     
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -178,7 +183,8 @@ void rc2014Fuji::rc2014_net_get_ssid()
     response_len = sizeof(cfg);
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -200,7 +206,7 @@ void rc2014Fuji::rc2014_net_set_ssid()
         } cfg;
 
         rc2014_recv_buffer((uint8_t *)&cfg, sizeof(cfg));
-        uint8_t ck = rc2014_recv();
+        // uint8_t ck = rc2014_recv();
 
         rc2014_response_ack();
 
@@ -232,7 +238,7 @@ void rc2014Fuji::rc2014_net_get_wifi_status()
     response_len = 1;
 
     rc2014_send(response[0]);
-    rc2014_send(rc2014_checksum(response, 1));
+    //rc2014_send(rc2014_checksum(response, 1));
     rc2014_flush();
     rc2014_send_complete();
 }
@@ -422,7 +428,7 @@ void rc2014Fuji::rc2014_open_directory()
 
 
     rc2014_recv_buffer((uint8_t *)&dirpath, 256);
-    rc2014_recv(); // Grab checksum
+    // rc2014_recv(); // Grab checksum
 
     rc2014_response_ack();
 
@@ -558,7 +564,8 @@ void rc2014Fuji::rc2014_read_directory_entry()
     response_len = maxlen;
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
 
     rc2014_send_complete();
 }
@@ -574,7 +581,8 @@ void rc2014Fuji::rc2014_get_directory_position()
     response_len = 2;
     
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
 
     rc2014_send_complete();
 }
@@ -642,7 +650,7 @@ void rc2014Fuji::rc2014_get_adapter_config()
     response_len = sizeof(cfg);
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    //rc2014_send(rc2014_checksum(response, response_len));
     rc2014_flush();
     
     rc2014_send_complete();
@@ -662,7 +670,7 @@ void rc2014Fuji::rc2014_new_disk()
     rc2014_recv_buffer(c, sizeof(uint32_t));
     rc2014_recv_buffer(p, 256);
 
-    rc2014_recv(); // CK
+    // rc2014_recv(); // CK
 
     rc2014_response_ack();
 
@@ -708,7 +716,8 @@ void rc2014Fuji::rc2014_read_host_slots()
     response_len = sizeof(hostSlots);
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -722,7 +731,7 @@ void rc2014Fuji::rc2014_write_host_slots()
 
     char hostSlots[MAX_HOSTS][MAX_HOSTNAME_LEN];
     rc2014_recv_buffer((uint8_t *)hostSlots, sizeof(hostSlots));
-    rc2014_recv(); // ck
+    // rc2014_recv(); // ck
 
     rc2014_response_ack();
     
@@ -779,7 +788,8 @@ void rc2014Fuji::rc2014_read_device_slots()
     response_len = returnsize;
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -798,7 +808,7 @@ void rc2014Fuji::rc2014_write_device_slots()
     } diskSlots[MAX_DISK_DEVICES];
 
     rc2014_recv_buffer((uint8_t *)&diskSlots, sizeof(diskSlots));
-    rc2014_recv(); // ck
+    // rc2014_recv(); // ck
 
     rc2014_response_ack();
     
@@ -886,7 +896,7 @@ void rc2014Fuji::rc2014_set_device_filename()
     rc2014_response_ack();
 
     rc2014_recv_buffer((uint8_t *)&f, 256);
-    rc2014_recv(); // CK
+    // rc2014_recv(); // CK
 
     Debug_printf("filename: %s\n", f);
 
@@ -911,7 +921,8 @@ void rc2014Fuji::rc2014_get_device_filename()
     response_len = 256;
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }
@@ -949,7 +960,8 @@ void rc2014Fuji::rc2014_device_enabled_status()
     response_len = 1;
 
     rc2014_send_buffer(response, response_len);
-    rc2014_send(rc2014_checksum(response, response_len));
+    // rc2014_send(rc2014_checksum(response, response_len));
+    rc2014_flush();
     
     rc2014_send_complete();
 }

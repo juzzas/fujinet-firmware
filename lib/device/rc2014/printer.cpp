@@ -130,7 +130,7 @@ void rc2014Printer::write()
 
     memset(_buffer, 0, sizeof(_buffer)); // clear _buffer
     rc2014_recv_buffer(_buffer, num_bytes);
-    uint8_t ck = rc2014_recv(); // ck
+    // uint8_t ck = rc2014_recv(); // ck
 
     
     // Copy the data to the printer emulator's buffer
