@@ -166,6 +166,7 @@ void main_setup()
     theFuji.setup(&rc2014Bus);
     rc2014Bus.setup();
 
+    // TODO: move these device creations to rc2014Bus, possibly passing the ptrs to call to theFuji.setup()
     FileSystem *ptrfs = fnSDFAT.running() ? (FileSystem *)&fnSDFAT : (FileSystem *)&fsFlash;
     rc2014Printer::printer_type ptype = Config.get_printer_type(0);
     if (ptype == rc2014Printer::printer_type::PRINTER_INVALID)

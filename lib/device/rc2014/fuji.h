@@ -5,6 +5,7 @@
 
 #include "network.h"
 #include "disk.h"
+#include "file.h"
 
 #include "fujiHost.h"
 #include "fujiDisk.h"
@@ -12,6 +13,7 @@
 
 #define MAX_HOSTS 8
 #define MAX_DISK_DEVICES 8
+#define MAX_FILE_DEVICES 8
 #define MAX_NETWORK_DEVICES 4
 
 #define MAX_SSID_LEN 32
@@ -68,6 +70,10 @@ private:
     fujiHost _fnHosts[MAX_HOSTS];
 
     fujiDisk _fnDisks[MAX_DISK_DEVICES];
+
+    rc2014File _fnFiles[MAX_FILE_DEVICES];
+
+    rc2014Network _fnNets[MAX_NETWORK_DEVICES];
 
     int _current_open_directory_slot = -1;
 

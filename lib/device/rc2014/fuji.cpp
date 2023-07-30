@@ -986,8 +986,8 @@ void rc2014Fuji::setup(systemBus *siobus)
 
 
     // Add our devices to the rc2014 bus
-    // for (int i = 0; i < 4; i++)
-    //    _rc2014_bus->addDevice(&_fnDisks[i].disk_dev, rc2014_DEVICEID_DISK + i);
+    for (int i = 0; i < MAX_FILE_DEVICES; i++)
+        _rc2014_bus->addDevice(&_fnFiles[i], RC2014_DEVICEID_FILE + i);
 
     // for (int i = 0; i < MAX_NETWORK_DEVICES; i++)
     //     _rc2014_bus->addDevice(&sioNetDevs[i], rc2014_DEVICEID_FN_NETWORK + i);
