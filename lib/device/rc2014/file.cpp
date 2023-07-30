@@ -54,7 +54,17 @@ void rc2014File::open()
     rc2014_recv_buffer(m_buffer.data(), 256);
     m_file_path = std::string(reinterpret_cast<char*>(m_buffer.data()));
     Debug_printf("FILE OPEN: %s\n", m_file_path.c_str());
-    rc2014_send_ack();
+
+    char fullpath[MAX_PATHLEN];
+    m_file = host->file_open(m_file_path.c_str(), fullpath, MAX_PATHLEN, "rb");
+    Debug_printf("FILE OPEN: %s\n", fullpath);
+
+    if (m_file) {
+        rc2014_send_ack();
+    } else {
+        Debug_printf("FILE OPEN: unable to open %s\n", m_file_path.c_str());
+        rc2014_send_error();
+    }
 
 
     rc2014_send_complete();
