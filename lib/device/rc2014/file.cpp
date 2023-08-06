@@ -19,31 +19,23 @@
 
 rc2014File::rc2014File()
 {
-    m_file = nullptr;
 }
 
 // Destructor
 rc2014File::~rc2014File()
 {
-    if (m_file != nullptr)
-        fclose(m_file);
+    m_file->close();
 }
 
 void rc2014File::open()
 {
     Debug_print("FILE OPEN\n");
     uint8_t mode = cmdFrame.aux1;
-    uint8_t host_id = cmdFrame.aux2;
+    m_host_id = cmdFrame.aux2;
 
-    if (m_file != nullptr) {
-        rc2014_send_error();
-        return;
-    }
+    Debug_printf("FILE OPEN: host %d\n", m_host_id);
 
-    m_host_id = host_id;
-    Debug_printf("FILE OPEN: host %d\n", host_id);
-
-    fujiHost* host = theFuji.get_hosts(host_id);
+    fujiHost* host = theFuji.get_hosts(m_host_id);
     if (!host) {
         rc2014_send_error();
         return;
@@ -55,17 +47,16 @@ void rc2014File::open()
     m_file_path = std::string(reinterpret_cast<char*>(m_buffer.data()));
     Debug_printf("FILE OPEN: %s\n", m_file_path.c_str());
 
-    char fullpath[MAX_PATHLEN];
-    m_file = host->file_open(m_file_path.c_str(), fullpath, MAX_PATHLEN, "rb");
-    Debug_printf("FILE OPEN: %s\n", fullpath);
+    m_file = FileWrapper::Open(host, m_file_path);
+    //m_file = host->file_open(m_file_path.c_str(), fullpath, MAX_PATHLEN, "rb");
+    Debug_printf("FILE OPEN: %s\n", m_file->fullpath());
 
-    if (m_file) {
+    if (m_file->isOpen()) {
         rc2014_send_ack();
     } else {
         Debug_printf("FILE OPEN: unable to open %s\n", m_file_path.c_str());
         rc2014_send_error();
     }
-
 
     rc2014_send_complete();
 }
@@ -76,11 +67,7 @@ void rc2014File::close()
 
     rc2014_send_ack();
 
-    if (m_file != nullptr)
-    {
-        fclose(m_file);
-        m_file = nullptr;
-    }
+    m_file->close();
 
     rc2014_send_complete();
 }
@@ -90,7 +77,7 @@ void rc2014File::read()
 {
     Debug_print("FILE READ\n");
 
-    if (m_file == nullptr)
+    if (!m_file->isOpen())
     {
         rc2014_send_error();
         return;
@@ -100,7 +87,7 @@ void rc2014File::read()
 
     // Send result to RC2014
     uint16_t buffer_size = UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1);
-    size_t sending = fread(m_buffer.data(), 1, buffer_size, m_file);
+    size_t sending = m_file->read(m_buffer.data(), buffer_size);
     if (sending != buffer_size) {
         Debug_printf("FILE READ: requested %d, read %d\n", buffer_size, sending);
     }
@@ -117,11 +104,17 @@ void rc2014File::write()
     Debug_print("FILE WRITE\n");
     rc2014_send_ack();
 
-    if (m_file != nullptr) {
+    if (m_file->isOpen()) {
         uint16_t buffer_size = UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1);
 
         rc2014_recv_buffer(m_buffer.data(), buffer_size);
         rc2014_send_ack();
+
+        size_t sending = m_file->write(m_buffer.data(), buffer_size);
+        if (sending != buffer_size) {
+            Debug_printf("FILE WRITE: requested %d, read %d\n", buffer_size, sending);
+        }
+        Debug_printf("FILE WRITE: %d bytes\n", buffer_size);
 
         rc2014_send_complete();
         return;
@@ -138,11 +131,10 @@ void rc2014File::status()
 
     uint8_t status[10] = {};
 
-    if (m_file) {
+    if (m_file->isOpen()) {
         status[0] = 0x01; // file status opened
 
-        fujiHost* host = theFuji.get_hosts(m_host_id);
-        uint32_t file_size = host->file_size(m_file);
+        uint32_t file_size = m_file->filesize();
         Debug_printf("FILE STATUS: size = %u\n", file_size);
 
         // file_size in Z80 little-endian order
@@ -151,15 +143,12 @@ void rc2014File::status()
         status[4] = (file_size >> 16) & 0xff;
         status[5] = (file_size >> 24) & 0xff;
 
-        fpos_t file_pos;
-        int rc = fgetpos(m_file, &file_pos);
-        if (rc == 0) {
-            Debug_printf("FILE STATUS: position = %u\n", file_pos);
-            status[6] = file_pos & 0xff; // file position
-            status[7] = (file_pos >> 8) & 0xff;
-            status[8] = (file_pos >> 16) & 0xff;
-            status[9] = (file_pos >> 24) & 0xff;
-        }
+        uint32_t file_pos = m_file->position();
+        Debug_printf("FILE STATUS: position = %u\n", file_pos);
+        status[6] = file_pos & 0xff; // file position
+        status[7] = (file_pos >> 8) & 0xff;
+        status[8] = (file_pos >> 16) & 0xff;
+        status[9] = (file_pos >> 24) & 0xff;
     }
 
     status[1] = 0x00; // error code
