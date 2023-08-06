@@ -100,6 +100,11 @@ void rc2014File::read()
 
     // Send result to RC2014
     uint16_t buffer_size = UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1);
+    size_t sending = fread(m_buffer.data(), 1, buffer_size, m_file);
+    if (sending != buffer_size) {
+        Debug_printf("FILE READ: requested %d, read %d\n", buffer_size, sending);
+    }
+    Debug_printf("FILE READ: %d bytes\n", buffer_size);
     rc2014_send_buffer(m_buffer.data(), buffer_size);
     rc2014_flush();
 
@@ -138,6 +143,7 @@ void rc2014File::status()
 
         fujiHost* host = theFuji.get_hosts(m_host_id);
         uint32_t file_size = host->file_size(m_file);
+        Debug_printf("FILE STATUS: size = %u\n", file_size);
 
         // file_size in Z80 little-endian order
         status[2] = file_size & 0xff; // file size
@@ -147,8 +153,8 @@ void rc2014File::status()
 
         fpos_t file_pos;
         int rc = fgetpos(m_file, &file_pos);
-
         if (rc == 0) {
+            Debug_printf("FILE STATUS: position = %u\n", file_pos);
             status[6] = file_pos & 0xff; // file position
             status[7] = (file_pos >> 8) & 0xff;
             status[8] = (file_pos >> 16) & 0xff;
