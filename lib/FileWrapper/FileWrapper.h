@@ -6,11 +6,15 @@
 #define FILEWRAPPER_H
 
 #include <memory>
-#include "FileBase.h"
 #include "fujiHost.h"
 
+#include "FileBinary.h"
+
 struct FileWrapper{
-    static std::unique_ptr<FileBase> Open(fujiHost* host, std::string const& filename) { return std::make_unique<FileBase>(host, filename); }
+    static std::unique_ptr<FileBase> Open(fujiHost* host, std::string const& filename, File::Mode mode = File::Mode::OREAD)
+    {
+        return std::make_unique<FileBinary>(host, filename, mode);
+    }
     //static unique_ptr<FileBase> OpenText(fujiHost* host, std::string const& filename) { return std::make_unique<FileText>(host, filename); }
 };
 

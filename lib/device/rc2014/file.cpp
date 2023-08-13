@@ -51,7 +51,7 @@ void rc2014File::open()
     //m_file = host->file_open(m_file_path.c_str(), fullpath, MAX_PATHLEN, "rb");
     Debug_printf("FILE OPEN: %s\n", m_file->fullpath());
 
-    if (m_file->isOpen()) {
+    if (m_file->is_open()) {
         rc2014_send_ack();
     } else {
         Debug_printf("FILE OPEN: unable to open %s\n", m_file_path.c_str());
@@ -77,7 +77,7 @@ void rc2014File::read()
 {
     Debug_print("FILE READ\n");
 
-    if (!m_file->isOpen())
+    if (!m_file->is_open())
     {
         rc2014_send_error();
         return;
@@ -87,10 +87,12 @@ void rc2014File::read()
 
     // Send result to RC2014
     uint16_t buffer_size = UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1);
-    size_t sending = m_file->read(m_buffer.data(), buffer_size);
-    if (sending != buffer_size) {
-        Debug_printf("FILE READ: requested %d, read %d\n", buffer_size, sending);
+    if (File::RC rc = m_file->read(m_buffer.data(), buffer_size); rc != File::RC::OK) {
+        Debug_printf("FILE READ: error %d\n", rc);
+        rc2014_send_error();
+        return;
     }
+
     Debug_printf("FILE READ: %d bytes\n", buffer_size);
     rc2014_send_buffer(m_buffer.data(), buffer_size);
     rc2014_flush();
@@ -104,7 +106,7 @@ void rc2014File::write()
     Debug_print("FILE WRITE\n");
     rc2014_send_ack();
 
-    if (m_file->isOpen()) {
+    if (m_file->is_open()) {
         uint16_t buffer_size = UINT16_FROM_HILOBYTES(cmdFrame.aux2, cmdFrame.aux1);
 
         rc2014_recv_buffer(m_buffer.data(), buffer_size);
@@ -131,24 +133,26 @@ void rc2014File::status()
 
     uint8_t status[10] = {};
 
-    if (m_file->isOpen()) {
+    if (m_file->is_open()) {
         status[0] = 0x01; // file status opened
 
-        uint32_t file_size = m_file->filesize();
-        Debug_printf("FILE STATUS: size = %u\n", file_size);
+        if (uint32_t file_size; m_file->filesize(&file_size) == File::RC::OK) {
+            Debug_printf("FILE STATUS: size = %u\n", file_size);
 
-        // file_size in Z80 little-endian order
-        status[2] = file_size & 0xff; // file size
-        status[3] = (file_size >> 8) & 0xff;
-        status[4] = (file_size >> 16) & 0xff;
-        status[5] = (file_size >> 24) & 0xff;
+            // file_size in Z80 little-endian order
+            status[2] = file_size & 0xff; // file size
+            status[3] = (file_size >> 8) & 0xff;
+            status[4] = (file_size >> 16) & 0xff;
+            status[5] = (file_size >> 24) & 0xff;
+        }
 
-        uint32_t file_pos = m_file->position();
-        Debug_printf("FILE STATUS: position = %u\n", file_pos);
-        status[6] = file_pos & 0xff; // file position
-        status[7] = (file_pos >> 8) & 0xff;
-        status[8] = (file_pos >> 16) & 0xff;
-        status[9] = (file_pos >> 24) & 0xff;
+        if (uint32_t file_pos; m_file->position(&file_pos) == File::RC::OK) {
+            Debug_printf("FILE STATUS: position = %u\n", file_pos);
+            status[6] = file_pos & 0xff; // file position
+            status[7] = (file_pos >> 8) & 0xff;
+            status[8] = (file_pos >> 16) & 0xff;
+            status[9] = (file_pos >> 24) & 0xff;
+        }
     }
 
     status[1] = 0x00; // error code
