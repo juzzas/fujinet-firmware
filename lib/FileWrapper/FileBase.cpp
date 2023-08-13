@@ -58,41 +58,32 @@ File::RC FileBase::seek(uint32_t pos)
     return File::RC::ERR_FAIL_SEEK;
 }
 
-File::RC FileBase::buffer_read(uint32_t offset, uint8_t* buffer, uint32_t buffer_size)
+size_t FileBase::buffer_read(uint32_t offset, uint8_t* buffer, uint32_t buffer_size)
 {
     File::RC rc = seek(offset);
-
     if (rc == File::RC::OK) {
-        size_t read = fread(buffer, 1, buffer_size, m_file);
-        if (read < buffer_size) {
-            return File::RC::ERR_SHORT_READ;
-        }
+        return fread(buffer, 1, buffer_size, m_file);
     }
 
-    return rc;
+    return 0;
 }
 
 File::RC FileBase::read(uint8_t* buffer, uint32_t buffer_size)
 {
-    File::RC rc = buffer_read(m_current_pos, buffer, buffer_size);
-
-    if (rc == File::RC::OK)
+    size_t read = buffer_read(m_current_pos, buffer, buffer_size);
+    if (read == buffer_size) {
         m_current_pos += buffer_size;
+        return File::RC::OK;
+    }
 
-    return rc;
+    return File::RC::ERR_SHORT_READ;
 }
 
-File::RC FileBase::buffer_write(uint32_t offset, uint8_t* buffer, uint32_t buffer_size)
+size_t FileBase::buffer_write(uint32_t offset, uint8_t* buffer, uint32_t buffer_size)
 {
     File::RC rc = seek(offset);
-
     if (rc == File::RC::OK) {
-        size_t wrote = fwrite(buffer, 1, buffer_size, m_file);
-
-        if (wrote < buffer_size) {
-            return File::RC::ERR_SHORT_WRITE;
-        }
-
+        return fwrite(buffer, 1, buffer_size, m_file);
     }
 
     return rc;
@@ -100,12 +91,13 @@ File::RC FileBase::buffer_write(uint32_t offset, uint8_t* buffer, uint32_t buffe
 
 File::RC FileBase::write(uint8_t* buffer, uint32_t buffer_size)
 {
-    File::RC rc = buffer_write(m_current_pos, buffer, buffer_size);
-
-    if (rc == File::RC::OK)
+    size_t wrote = buffer_write(m_current_pos, buffer, buffer_size);
+    if (wrote == buffer_size) {
         m_current_pos += buffer_size;
+        return File::RC::OK;
+    }
 
-    return rc;
+    return File::RC::ERR_SHORT_READ;
 }
 
 std::string& FileBase::fullpath()

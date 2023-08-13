@@ -49,8 +49,8 @@ public:
     bool is_open();
 
 protected:
-    File::RC buffer_read(uint32_t offset, uint8_t* buffer, uint32_t buffer_size);
-    File::RC buffer_write(uint32_t offset, uint8_t* buffer, uint32_t buffer_size);
+    size_t buffer_read(uint32_t offset, uint8_t* buffer, uint32_t buffer_size);
+    size_t buffer_write(uint32_t offset, uint8_t* buffer, uint32_t buffer_size);
 
 
 private:
