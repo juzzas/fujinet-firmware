@@ -131,31 +131,22 @@ void rc2014File::status()
     Debug_print("FILE STATUS\n");
     rc2014_send_ack();
 
-    uint8_t status[10] = {};
+    uint8_t status[6] = {};
 
     if (m_file->is_open()) {
         status[0] = 0x01; // file status opened
 
-        if (uint32_t file_size; m_file->filesize(&file_size) == File::RC::OK) {
-            Debug_printf("FILE STATUS: size = %u\n", file_size);
+        uint32_t available = m_file->read_available();
+        Debug_printf("FILE STATUS: remaining = %u\n", available);
 
-            // file_size in Z80 little-endian order
-            status[2] = file_size & 0xff; // file size
-            status[3] = (file_size >> 8) & 0xff;
-            status[4] = (file_size >> 16) & 0xff;
-            status[5] = (file_size >> 24) & 0xff;
-        }
-
-        if (uint32_t file_pos; m_file->position(&file_pos) == File::RC::OK) {
-            Debug_printf("FILE STATUS: position = %u\n", file_pos);
-            status[6] = file_pos & 0xff; // file position
-            status[7] = (file_pos >> 8) & 0xff;
-            status[8] = (file_pos >> 16) & 0xff;
-            status[9] = (file_pos >> 24) & 0xff;
-        }
+        // file_size in Z80 little-endian order
+        status[2] = available & 0xff; // file size
+        status[3] = (available >> 8) & 0xff;
+        status[4] = (available >> 16) & 0xff;
+        status[5] = (available >> 24) & 0xff;
     }
 
-    status[1] = 0x00; // error code
+    status[1] = m_file->read_eof(); // error code
 
     rc2014_send_buffer(status, sizeof(status));
     rc2014_flush();

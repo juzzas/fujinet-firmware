@@ -110,15 +110,22 @@ bool FileBase::is_open()
     return (m_file != nullptr);
 }
 
-File::RC FileBase::filesize(uint32_t *result)
+uint32_t FileBase::filesize()
 {
-    *result = m_host->file_size(m_file);
-    return File::RC::OK;
+    return m_host->file_size(m_file);
 }
 
-File::RC FileBase::position(uint32_t *result)
+uint32_t FileBase::position()
 {
-    *result = m_current_pos;
-    return File::RC::OK;
+    return m_current_pos;
 }
 
+uint32_t FileBase::read_available()
+{
+    return filesize() - position();
+}
+
+bool FileBase::read_eof()
+{
+    return position() < filesize();
+}

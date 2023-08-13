@@ -42,11 +42,15 @@ public:
     virtual File::RC write(uint8_t* buffer, uint32_t buffer_size);
     virtual File::RC seek(uint32_t pos);
 
-    virtual File::RC filesize(uint32_t *result);
-    virtual File::RC position(uint32_t *result);
+    virtual uint32_t filesize();
+    virtual uint32_t position();
+
+    virtual uint32_t read_available();
+    virtual bool read_eof();
 
     std::string& fullpath();
     bool is_open();
+
 
 protected:
     size_t buffer_read(uint32_t offset, uint8_t* buffer, uint32_t buffer_size);
