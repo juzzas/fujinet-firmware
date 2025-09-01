@@ -2,10 +2,10 @@
 #ifndef DISK2_H
 #define DISK2_H
 
-#include "bus.h"
+#include "disk.h"
 #include "../media/media.h"
 
-class iwmDisk2 : public iwmDevice
+class iwmDisk2 : public iwmDisk
 {
 
 protected:
@@ -16,13 +16,12 @@ protected:
     void send_extended_status_reply_packet() override {};
     void send_status_dib_reply_packet() override {};
     void send_extended_status_dib_reply_packet() override {};
-    void process(iwm_decoded_cmd_t cmd) override {}; 
+    void process(iwm_decoded_cmd_t cmd) override {};
     void iwm_readblock(iwm_decoded_cmd_t cmd) override {};
     void iwm_writeblock(iwm_decoded_cmd_t cmd) override {};
-   
+
     void shutdown() override;
     char disk_num;
-    bool enabled;
     int track_pos;
     int old_pos;
     uint8_t oldphases;
@@ -30,17 +29,17 @@ protected:
 public:
     iwmDisk2();
     void init();
-    mediatype_t mount(FILE *f, mediatype_t disk_type = MEDIATYPE_UNKNOWN);
+    virtual mediatype_t mount_file(fnFile *f, uint32_t disksize, mediatype_t disk_type) override;
     void unmount();
-    bool write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors);
+    bool write_blank(fnFile *f, uint16_t sectorSize, uint16_t numSectors);
     int get_track_pos() { return track_pos; };
     bool phases_valid(uint8_t phases);
     bool move_head();
     void change_track(int indicator);
-    
     // void set_disk_number(char c) { disk_num = c; }
     // char get_disk_number() { return disk_num; };
-    mediatype_t disktype() { return _disk == nullptr ? MEDIATYPE_UNKNOWN : _disk->_mediatype; };
+
+    bool write_sector(int track, int sector, uint8_t* buffer);
 
     ~iwmDisk2();
 };

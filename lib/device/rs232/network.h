@@ -1,15 +1,14 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
-#include <driver/timer.h>
-
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "bus.h"
 
 #include "Protocol.h"
-#include "EdUrlParser.h"
+#include "peoples_url_parser.h"
 #include "networkStatus.h"
 #include "status_error_codes.h"
 #include "fnjson.h"
@@ -131,7 +130,10 @@ public:
      * @param comanddata incoming 4 bytes containing command and aux bytes
      * @param checksum 8 bit checksum
      */
-    virtual void rs232_process(uint32_t commanddata, uint8_t checksum);
+    virtual void rs232_process(cmdFrame_t *cmd_ptr);
+
+    void rs232_seek();
+    void rs232_tell();
 
 private:
     /**
@@ -142,22 +144,22 @@ private:
     /**
      * The Receive buffer for this N: device
      */
-    string *receiveBuffer = nullptr;
+    std::string *receiveBuffer = nullptr;
 
     /**
      * The transmit buffer for this N: device
      */
-    string *transmitBuffer = nullptr;
+    std::string *transmitBuffer = nullptr;
 
     /**
      * The special buffer for this N: device
      */
-    string *specialBuffer = nullptr;
+    std::string *specialBuffer = nullptr;
 
     /**
-     * The EdUrlParser object used to hold/process a URL
+     * The PeoplesUrlParser object used to hold/process a URL
      */
-    EdUrlParser *urlParser = nullptr;
+    std::unique_ptr<PeoplesUrlParser> urlParser = nullptr;
 
     /**
      * Instance of currently open network protocol
@@ -182,28 +184,28 @@ private:
     /**
      * Devicespec passed to us, e.g. N:HTTP://WWW.GOOGLE.COM:80/
      */
-    string deviceSpec;
+    std::string deviceSpec;
 
     /**
      * The currently set Prefix for this N: device, set by RS232 call 0x2C
      */
-    string prefix;
+    std::string prefix;
 
     /**
      * The AUX1 value used for OPEN.
      */
-    uint8_t open_aux1;
+    uint8_t open_aux1 = 0;
 
     /**
      * The AUX2 value used for OPEN.
      */
-    uint8_t open_aux2;
+    uint8_t open_aux2 = 0;
 
     /**
      * The Translation mode ORed into AUX2 for READ/WRITE/STATUS operations.
      * 0 = No Translation, 1 = CR<->EOL (Macintosh), 2 = LF<->EOL (UNIX), 3 = CR/LF<->EOL (PC/Windows)
      */
-    uint8_t trans_aux2;
+    uint8_t trans_aux2 = 0;
 
     /**
      * Return value for DSTATS inquiry
@@ -213,12 +215,12 @@ private:
     /**
      * The login to use for a protocol action
      */
-    string login;
+    std::string login;
 
     /**
      * The password to use for a protocol action
      */
-    string password;
+    std::string password;
 
     /**
      * Timer Rate for interrupt timer
@@ -253,7 +255,7 @@ private:
     /**
      * Bytes sent of current JSON query object.
      */
-    unsigned short json_bytes_remaining=0;
+    unsigned short json_bytes_remaining = 0;
 
     /**
      * Instantiate protocol object
@@ -382,7 +384,7 @@ private:
     void rs232_parse_json();
 
     /**
-     * @brief Set JSON query string. (must be in JSON channelMode)
+     * @brief Set JSON query std::string. (must be in JSON channelMode)
      */
     void rs232_set_json_query();
 

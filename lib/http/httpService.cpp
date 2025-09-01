@@ -1,10 +1,18 @@
 
+#include "fnHttpClient.h"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+
 #include "httpService.h"
 
 #include <sstream>
 #include <vector>
 
 #include "../../include/debug.h"
+
+// WebDAV
+#include "webdav/webdav_server.h"
+#include "webdav/request.h"
+#include "webdav/response.h"
 
 #include "fnSystem.h"
 #include "fnConfig.h"
@@ -213,7 +221,9 @@ void fnHttpService::send_header_footer(httpd_req_t *req, int headfoot)
 void fnHttpService::send_file_parsed(httpd_req_t *req, const char *filename)
 {
     // Note that we don't add FNWS_FILE_ROOT as it should've been done in send_file()
+#ifdef VERBOSE_HTTP
     Debug_printf("Opening file for parsing: '%s'\n", filename);
+#endif
 
     _fnwserr err = fnwserr_noerrr;
 
@@ -316,6 +326,7 @@ void fnHttpService::parse_query(httpd_req_t *req, queryparts *results)
         return;
     }
 
+    /// @todo Error if path_end == 0, the index to substr becomes -1
     results->path += results->full_uri.substr(0, path_end - 1);
     results->query += results->full_uri.substr(path_end + 1);
 
@@ -333,7 +344,9 @@ void fnHttpService::parse_query(httpd_req_t *req, queryparts *results)
 
     while (token != NULL)
     {
+#ifdef VERBOSE_HTTP
         Debug_printf("Item: %s\n", token);
+#endif
         vItems.push_back(string(token));
         token = strtok(NULL, "&");
     }
@@ -355,7 +368,9 @@ void fnHttpService::parse_query(httpd_req_t *req, queryparts *results)
         key = it->substr(0, it->find_first_of("="));
         value = it->substr(it->find_first_of("=") + 1);
 
+#ifdef VERBOSE_HTTP
         Debug_printf("Key %s : Value %s\n", key.c_str(), value.c_str());
+#endif
 
         results->query_parsed.insert(make_pair(key, value));
     }
@@ -365,7 +380,9 @@ void fnHttpService::parse_query(httpd_req_t *req, queryparts *results)
 
 esp_err_t fnHttpService::get_handler_index(httpd_req_t *req)
 {
+#ifdef VERBOSE_HTTP
     Debug_printf("Index request handler %p\n", xTaskGetCurrentTaskHandle());
+#endif
 
     send_file(req, "index.html");
     return ESP_OK;
@@ -374,7 +391,9 @@ esp_err_t fnHttpService::get_handler_index(httpd_req_t *req)
 esp_err_t fnHttpService::get_handler_test(httpd_req_t *req)
 {
     TaskHandle_t task = xTaskGetCurrentTaskHandle();
+#ifdef VERBOSE_HTTP
     Debug_printf("Test request handler %p\n", task);
+#endif
 
     // Debug_printf("WiFI handle %p\n", handle_WiFi);
     // vTaskPrioritySet(handle_WiFi, 5);
@@ -527,7 +546,9 @@ esp_err_t fnHttpService::get_handler_print(httpd_req_t *req)
         httpd_resp_send_chunk(req, buf, count);
     } while (count > 0);
 
+#ifdef VERBOSE_HTTP
     Debug_printf("Sent %u bytes total from print file\n", total);
+#endif
 
     free(buf);
     fclose(poutput);
@@ -542,12 +563,16 @@ esp_err_t fnHttpService::get_handler_print(httpd_req_t *req)
 
 esp_err_t fnHttpService::get_handler_modem_sniffer(httpd_req_t *req)
 {
+#ifdef VERBOSE_HTTP
     Debug_printf("Modem Sniffer output request handler\n");
+#endif
 
     fnHTTPD.clearErrMsg();
 
     ModemSniffer *modemSniffer = sioR->get_modem_sniffer();
+#ifdef VERBOSE_HTTP
     Debug_printf("Got modem Sniffer.\n");
+#endif
     time_t now = fnSystem.millis();
 
     if (now - sioR->get_last_activity_time() < PRINTER_BUSY_TIME) // re-using printer timeout constant.
@@ -558,7 +583,9 @@ esp_err_t fnHttpService::get_handler_modem_sniffer(httpd_req_t *req)
     }
 
     FILE *sOutput = modemSniffer->closeOutputAndProvideReadHandle();
+#ifdef VERBOSE_HTTP
     Debug_printf("Got file handle %p\n", sOutput);
+#endif
     if (sOutput == nullptr)
     {
         fnHTTPD.addToErrMsg("Unable to open modem sniffer output.\n");
@@ -581,12 +608,16 @@ esp_err_t fnHttpService::get_handler_modem_sniffer(httpd_req_t *req)
         httpd_resp_send_chunk(req, buf, count);
     } while (count > 0);
 
+#ifdef VERBOSE_HTTP
     Debug_printf("Sent %u bytes total from sniffer file\n", total);
+#endif
 
     free(buf);
     fclose(sOutput);
 
+#ifdef VERBOSE_HTTP
     Debug_printf("Sniffer dump completed.\n");
+#endif
 
     return ESP_OK;
 }
@@ -653,8 +684,13 @@ esp_err_t fnHttpService::get_handler_mount(httpd_req_t *req)
         {
             fujiDisk *disk = theFuji.get_disks(ds);
             fujiHost *host = theFuji.get_hosts(hs);
+#ifdef BUILD_APPLE
+            DEVICE_TYPE *disk_dev = theFuji.get_disk_dev(ds);
+#else
+	    DEVICE_TYPE *disk_dev = &disk->disk_dev;
+#endif
 
-            disk->fileh = host->file_open(qp.query_parsed["filename"].c_str(), (char *)qp.query_parsed["filename"].c_str(), qp.query_parsed["filename"].length() + 1, flag);
+            disk->fileh = host->fnfile_open(qp.query_parsed["filename"].c_str(), (char *)qp.query_parsed["filename"].c_str(), qp.query_parsed["filename"].length() + 1, flag);
 
             if (disk->fileh == nullptr)
             {
@@ -669,14 +705,14 @@ esp_err_t fnHttpService::get_handler_mount(httpd_req_t *req)
 #endif
                 strcpy(disk->filename,qp.query_parsed["filename"].c_str());
                 disk->disk_size = host->file_size(disk->fileh);
-                disk->disk_type = disk->disk_dev.mount(disk->fileh, disk->filename, disk->disk_size);
+                disk->disk_type = disk_dev->mount(disk->fileh, disk->filename, disk->disk_size);
                 #ifdef BUILD_APPLE
-                if(mode == fnConfig::mount_modes::MOUNTMODE_WRITE) {disk->disk_dev.readonly = false;}
+                if(mode == fnConfig::mount_modes::MOUNTMODE_WRITE) {disk_dev->readonly = false;}
                 #endif
                 Config.store_mount(ds, hs, qp.query_parsed["filename"].c_str(), mode);
                 Config.save();
                 theFuji._populate_slots_from_config(); // otherwise they don't show up in config.
-                disk->disk_dev.device_active = true;
+                disk_dev->device_active = true;
             }
         }
         else
@@ -720,11 +756,14 @@ esp_err_t fnHttpService::get_handler_eject(httpd_req_t *req)
     {
         fnHTTPD.addToErrMsg("<li>deviceslot should be between 0 and 7</li>");
     }
-    #ifdef BUILD_APPLE
-    if(theFuji.get_disks(ds)->disk_dev.device_active) //set disk switched only if device was previosly mounted. 
-        theFuji.get_disks(ds)->disk_dev.switched = true;
-    #endif
-    theFuji.get_disks(ds)->disk_dev.unmount();
+#ifdef BUILD_APPLE
+    DEVICE_TYPE *disk_dev = theFuji.get_disk_dev(ds);
+    if(disk_dev->device_active) //set disk switched only if device was previosly mounted.
+        disk_dev->switched = true;
+#else
+    DEVICE_TYPE *disk_dev = &theFuji.get_disks(ds)->disk_dev;
+#endif
+    disk_dev->unmount();
 #ifdef BUILD_ATARI
     if (theFuji.get_disks(ds)->disk_type == MEDIATYPE_CAS || theFuji.get_disks(ds)->disk_type == MEDIATYPE_WAV)
     {
@@ -736,7 +775,7 @@ esp_err_t fnHttpService::get_handler_eject(httpd_req_t *req)
     Config.clear_mount(ds);
     Config.save();
     theFuji._populate_slots_from_config(); // otherwise they don't show up in config.
-    theFuji.get_disks(ds)->disk_dev.device_active = false;
+    disk_dev->device_active = false;
 
     // Finally, scan all device slots, if all empty, and config enabled, enable the config device.
     if (Config.get_general_config_enabled())
@@ -907,7 +946,7 @@ esp_err_t fnHttpService::get_handler_dir(httpd_req_t *req)
     chunk +=
         "        <div class=\"fileflex\">\n"
         "            <div class=\"filechild\">\n"
-        "               <header>SELECT DISK TO MOUNT<span id=\"logowob\"></span>" +
+        "               <header>SELECT DISK TO MOUNT<span class=\"logowob\"></span>" +
         string(theFuji.get_hosts(hs)->get_hostname()) +
         qp.query_parsed["path"] +
         "</header>\n"
@@ -1084,7 +1123,7 @@ esp_err_t fnHttpService::get_handler_slot(httpd_req_t *req)
     chunk +=
         "        <div class=\"fileflex\">\n"
         "            <div class=\"filechild\">\n"
-        "               <header>SELECT DRIVE SLOT<span id=\"logowob\"></span>" +
+        "               <header>SELECT DRIVE SLOT<span class=\"logowob\"></span>" +
         string(theFuji.get_hosts(hs)->get_hostname()) + " :: " + qp.query_parsed["filename"] +
         "</header>\n"
         "               <div class=\"abortline\"><a href=\"/\">ABORT</a></div>\n"
@@ -1145,10 +1184,77 @@ esp_err_t fnHttpService::get_handler_slot(httpd_req_t *req)
     return ESP_OK;
 }
 
+esp_err_t fnHttpService::get_handler_hosts(httpd_req_t *req)
+{
+    std::string response = "";
+    for (int hs = 0; hs < 8; hs++) {
+        response += std::string(theFuji.get_hosts(hs)->get_hostname()) + "\n";
+    }
+    httpd_resp_send(req, response.c_str(), response.length());
+    return ESP_OK;
+}
+
+esp_err_t fnHttpService::post_handler_hosts(httpd_req_t *req)
+{
+    queryparts qp;
+    parse_query(req, &qp);
+
+    int hostslot = atoi(qp.query_parsed["hostslot"].c_str());
+    char *hostname = (char *)qp.query_parsed["hostname"].c_str();
+
+    theFuji.set_slot_hostname(hostslot, hostname);
+
+    std::string response = "";
+    for (int hs = 0; hs < 8; hs++) {
+        response += std::string(theFuji.get_hosts(hs)->get_hostname()) + "\n";
+    }
+    httpd_resp_send(req, response.c_str(), response.length());
+    return ESP_OK;
+}
+
+std::string fnHttpService::shorten_url(std::string url)
+{
+    int id = shortURLs.size();
+    shortURLs.push_back(url);
+
+    // Ideally would use hostname, but it doesn't include .local needed for mDNS devices
+    std::string shortened = "http://" + fnSystem.Net.get_ip4_address_str() + "/url/" + std::to_string(id);
+    Debug_printf("Short URL /url/%d registered for URL: %s\n", id, url.c_str());
+    return shortened;
+}
+
+esp_err_t fnHttpService::get_handler_shorturl(httpd_req_t *req)
+{
+    // Strip the /url/ from the path
+    std::string id_str = std::string(req->uri).substr(5);
+    Debug_printf("Short URL handler: %s\n", id_str.c_str());
+
+    if (!std::all_of(id_str.begin(), id_str.end(), ::isdigit)) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_FAIL;
+    }
+
+    int id = std::stoi(id_str);
+    if (id > fnHTTPD.shortURLs.size())
+    {
+        httpd_resp_set_status(req, "404 Not Found");
+        httpd_resp_send(req, NULL, 0);
+    }
+    else
+    {
+        httpd_resp_set_status(req, "303 See Other");
+        httpd_resp_set_hdr(req, "Location", fnHTTPD.shortURLs[id].c_str());
+        httpd_resp_send(req, NULL, 0);
+    }
+    return ESP_OK;
+}
+
 esp_err_t fnHttpService::post_handler_config(httpd_req_t *req)
 {
-
+#ifdef VERBOSE_HTTP
     Debug_printf("Post_config request handler '%s'\n", req->uri);
+#endif
 
     _fnwserr err = fnwserr_noerrr;
 
@@ -1156,7 +1262,6 @@ esp_err_t fnHttpService::post_handler_config(httpd_req_t *req)
     char *buf = (char *)calloc(FNWS_RECV_BUFF_SIZE, 1);
     if (buf == NULL)
     {
-
         Debug_printf("Couldn't allocate %u bytes to store POST contents\n", FNWS_RECV_BUFF_SIZE);
 
         err = fnwserr_memory;
@@ -1194,6 +1299,137 @@ esp_err_t fnHttpService::post_handler_config(httpd_req_t *req)
 
     return ESP_OK;
 }
+
+
+
+esp_err_t fnHttpService::webdav_handler(httpd_req_t *httpd_req)
+{
+    WebDav::Server *server = (WebDav::Server *)httpd_req->user_ctx;
+    WebDav::Request req(httpd_req);
+    WebDav::Response resp(httpd_req);
+    int ret;
+
+    //Debug_printv("url[%s]", httpd_req->uri);
+
+    if (!req.parseRequest())
+    {
+        resp.setStatus(400); // Bad Request
+        resp.flushHeaders();
+        resp.closeBody();
+        return ESP_OK;
+    }
+
+    // httpd_resp_set_hdr(httpd_req, "Access-Control-Allow-Origin", "*");
+    // httpd_resp_set_hdr(httpd_req, "Access-Control-Allow-Headers", "*");
+    // httpd_resp_set_hdr(httpd_req, "Access-Control-Allow-Methods", "*");
+
+    Debug_printv("%d %s[%s]", httpd_req->method, http_method_str((enum http_method)httpd_req->method), httpd_req->uri);
+
+    switch (httpd_req->method)
+    {
+    case HTTP_COPY:
+        ret = server->doCopy(req, resp);
+        break;
+    case HTTP_DELETE:
+        ret = server->doDelete(req, resp);
+        break;
+    case HTTP_GET:
+        ret = server->doGet(req, resp);
+        if ( ret == 200 )
+            return ESP_OK;
+        break;
+    case HTTP_HEAD:
+        ret = server->doHead(req, resp);
+        break;
+    case HTTP_LOCK:
+        ret = server->doLock(req, resp);
+        break;
+    case HTTP_MKCOL:
+        ret = server->doMkcol(req, resp);
+        break;
+    case HTTP_MOVE:
+        ret = server->doMove(req, resp);
+        break;
+    case HTTP_OPTIONS:
+        ret = server->doOptions(req, resp);
+        break;
+    case HTTP_PROPFIND:
+        ret = server->doPropfind(req, resp);
+        if (ret == 207)
+            return ESP_OK;
+        break;
+    case HTTP_PROPPATCH:
+        ret = server->doProppatch(req, resp);
+        break;
+    case HTTP_PUT:
+        ret = server->doPut(req, resp);
+        break;
+    case HTTP_UNLOCK:
+        ret = server->doUnlock(req, resp);
+        break;
+    default:
+        return ESP_ERR_HTTPD_INVALID_REQ;
+        break;
+    }
+
+    resp.setStatus(ret);
+
+    if ( (ret > 399) & (httpd_req->method != HTTP_HEAD) )
+    {
+        // Send error
+        httpd_resp_send(httpd_req, NULL, 0);
+    }
+    else
+    {
+        // Send empty response
+        resp.setHeader("Connection","close");
+        resp.flushHeaders();
+        resp.closeBody();
+    }
+
+    Debug_printv("ret[%d]", ret);
+
+    return ESP_OK;
+}
+
+
+void fnHttpService::webdav_register(httpd_handle_t server, const char *root_uri, const char *root_path)
+{
+    WebDav::Server *webDavServer = new WebDav::Server(root_uri, root_path);
+
+    char *uri;
+    asprintf(&uri, "%s/?*", root_uri);
+
+    httpd_uri_t uri_dav = {
+        .uri = uri,
+        .method = http_method(0),
+        .handler = webdav_handler,
+        .user_ctx = webDavServer,
+        .is_websocket = false
+    };
+
+    http_method methods[] = {
+        HTTP_COPY,
+        HTTP_DELETE,
+        HTTP_GET,
+        HTTP_HEAD,
+        HTTP_LOCK,
+        HTTP_MKCOL,
+        HTTP_MOVE,
+        HTTP_OPTIONS,
+        HTTP_PROPFIND,
+        HTTP_PROPPATCH,
+        HTTP_PUT,
+        HTTP_UNLOCK,
+    };
+
+    for (int i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
+    {
+        uri_dav.method = methods[i];
+        httpd_register_uri_handler(server, &uri_dav);
+    }
+}
+
 
 /* We're pointing global_ctx to a member of our fnHttpService object,
  *  so we don't want the libarary freeing it for us. It'll be freed when
@@ -1272,6 +1508,27 @@ httpd_handle_t fnHttpService::start_server(serverstate &state)
          .is_websocket = false,
          .handle_ws_control_frames = false,
          .supported_subprotocol = nullptr},
+        {.uri = "/hosts",
+         .method = HTTP_GET,
+         .handler = get_handler_hosts,
+         .user_ctx = NULL,
+         .is_websocket = false,
+         .handle_ws_control_frames = false,
+         .supported_subprotocol = nullptr},
+        {.uri = "/hosts",
+         .method = HTTP_POST,
+         .handler = post_handler_hosts,
+         .user_ctx = NULL,
+         .is_websocket = false,
+         .handle_ws_control_frames = false,
+         .supported_subprotocol = nullptr},
+        {.uri = "/url/*",
+         .method = HTTP_GET,
+         .handler = get_handler_shorturl,
+         .user_ctx = NULL,
+         .is_websocket = false,
+         .handle_ws_control_frames = false,
+         .supported_subprotocol = nullptr},
 #ifdef BUILD_ADAM
         {.uri = "/term",
          .method = HTTP_GET,
@@ -1299,11 +1556,14 @@ httpd_handle_t fnHttpService::start_server(serverstate &state)
     state._FS = &fsFlash;
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.stack_size = 8192;
-    config.max_resp_headers = 16;
-    config.max_uri_handlers = 16;
     config.task_priority = 12; // Bump this higher than fnService loop
     config.core_id = 0; // Pin to CPU core 0
+    config.stack_size = 8192;
+    config.max_uri_handlers = 32;
+    config.max_resp_headers = 16;
+    config.keep_alive_enable = true;
+    config.uri_match_fn = httpd_uri_match_wildcard;
+
     // Keep a reference to our object
     config.global_user_ctx = (void *)&state;
     // Set our own global_user_ctx free function, otherwise the library will free an object we don't want freed
@@ -1317,6 +1577,9 @@ httpd_handle_t fnHttpService::start_server(serverstate &state)
         // Register URI handlers
         for (const httpd_uri_t uridef : uris)
             httpd_register_uri_handler(state.hServer, &uridef);
+
+        // Register WebDAV handlers
+        webdav_register(state.hServer, "/dav", "/sd");
     }
     else
     {

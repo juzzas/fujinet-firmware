@@ -9,6 +9,8 @@
 #include "fuji.h"
 #include "fnFS.h"
 #include "fnFsSD.h"
+#include "fnConfig.h"
+#include "compat_string.h"
 
 #include "../hardware/led.h"
 
@@ -40,7 +42,9 @@ static void cpmTask(void *arg)
         memset(newname, 0, sizeof(newname));
         memset(fcbname, 0, sizeof(fcbname));
         memset(pattern, 0, sizeof(pattern));
+#ifdef ESP_PLATFORM // OS
         vTaskDelay(100);
+#endif
         _puts(CCPHEAD);
         _PatchCPM();
         _ccp();
@@ -49,8 +53,10 @@ static void cpmTask(void *arg)
 
 iwmCPM::iwmCPM()
 {
+#ifdef ESP_PLATFORM // OS
     rxq = xQueueCreate(2048, sizeof(char));
     txq = xQueueCreate(2048, sizeof(char));
+#endif
 }
 
 void iwmCPM::send_status_reply_packet()
@@ -67,44 +73,16 @@ void iwmCPM::send_status_reply_packet()
 
 void iwmCPM::send_status_dib_reply_packet()
 {
-    uint8_t data[25];
+	Debug_printf("\r\nCPM: Sending DIB reply\r\n");
+	std::vector<uint8_t> data = create_dib_reply_packet(
+		"CPM",                                                      // name
+		STATCODE_READ_ALLOWED | STATCODE_DEVICE_ONLINE,             // status
+		{ 0, 0, 0 },                                                // block size
+		{ SP_TYPE_BYTE_FUJINET_CPM, SP_SUBTYPE_BYTE_FUJINET_CPM },  // type, subtype
+		{ 0x00, 0x01 }                                              // version.
+	);
+	IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data.data(), data.size());
 
-    //* write data buffer first (25 bytes) 3 grp7 + 4 odds
-    // General Status byte
-    // Bit 7: Block  device
-    // Bit 6: Write allowed
-    // Bit 5: Read allowed
-    // Bit 4: Device online or disk in drive
-    // Bit 3: Format allowed
-    // Bit 2: Media write protected (block devices only)
-    // Bit 1: Currently interrupting (//c only)
-    // Bit 0: Currently open (char devices only)
-    data[0] = STATCODE_READ_ALLOWED | STATCODE_DEVICE_ONLINE;
-    data[1] = 0;    // block size 1
-    data[2] = 0;    // block size 2
-    data[3] = 0;    // block size 3
-    data[4] = 0x03; // ID string length - 11 chars
-    data[5] = 'C';
-    data[6] = 'P';
-    data[7] = 'M';
-    data[8] = ' ';
-    data[9] = ' ';
-    data[10] = ' ';
-    data[11] = ' ';
-    data[12] = ' ';
-    data[13] = ' ';
-    data[14] = ' ';
-    data[15] = ' ';
-    data[16] = ' ';
-    data[17] = ' ';
-    data[18] = ' ';
-    data[19] = ' ';
-    data[20] = ' ';                         // ID string (16 chars total)
-    data[21] = SP_TYPE_BYTE_FUJINET_CPM;    // Device type    - 0x02  harddisk
-    data[22] = SP_SUBTYPE_BYTE_FUJINET_CPM; // Device Subtype - 0x0a
-    data[23] = 0x00;                        // Firmware version 2 bytes
-    data[24] = 0x01;                        //
-    IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data, 25);
 }
 
 void iwmCPM::sio_status()
@@ -116,12 +94,13 @@ void iwmCPM::sio_status()
 void iwmCPM::iwm_open(iwm_decoded_cmd_t cmd)
 {
     uint8_t err_result = SP_ERR_NOERROR;
-    
+
     Debug_printf("\r\nCP/M: Open\n");
-    if (!fnSystem.spifix())
+#ifdef ESP_PLATFORM // OS
+    if (!fnSystem.hasbuffer())
     {
         err_result = SP_ERR_OFFLINE;
-        Debug_printf("FujiApple SPI Fix Missing, not starting CP/M\n");
+    Debug_printf("FujiApple HASBUFFER Missing, not starting CP/M\n");
     }
     else
     {
@@ -131,6 +110,7 @@ void iwmCPM::iwm_open(iwm_decoded_cmd_t cmd)
             xTaskCreatePinnedToCore(cpmTask, "cpmtask", 32768, NULL, CPM_TASK_PRIORITY, &cpmTaskHandle, 1);
         }
     }
+#endif
 
     send_reply_packet(err_result);
 }
@@ -146,7 +126,7 @@ void iwmCPM::iwm_status(iwm_decoded_cmd_t cmd)
     unsigned short mw;
     // uint8_t source = cmd.dest;                                                // we are the destination and will become the source // packet_buffer[6];
     uint8_t status_code = get_status_code(cmd); // (cmd.g7byte3 & 0x7f) | ((cmd.grp7msb << 3) & 0x80); // status codes 00-FF
-    Debug_printf("\r\nDevice %02x Status Code %02x\n", id(), status_code);
+    Debug_printf("\r\n[CPM] Device %02x Status Code %02x\r\n", id(), status_code);
     // Debug_printf("\r\nStatus List is at %02x %02x\n", cmd.g7byte1 & 0x7f, cmd.g7byte2 & 0x7f);
 
     switch (status_code)
@@ -162,7 +142,9 @@ void iwmCPM::iwm_status(iwm_decoded_cmd_t cmd)
         return;
         break;
     case 'S': // Status
+#ifdef ESP_PLATFORM // OS
         mw = uxQueueMessagesWaiting(rxq);
+#endif
 
         if (mw > 512)
             mw = 512;
@@ -173,7 +155,9 @@ void iwmCPM::iwm_status(iwm_decoded_cmd_t cmd)
         Debug_printf("%u bytes waiting\n", mw);
         break;
     case 'B':
+#ifdef ESP_PLATFORM // OS
         data_buffer[0]=(cpmTaskHandle==NULL ? 0 : 1);
+#endif
         data_len = 0;
         Debug_printf("CPM Task Running? %d",data_buffer[0]);
         break;
@@ -187,9 +171,13 @@ void iwmCPM::iwm_read(iwm_decoded_cmd_t cmd)
 {
     uint16_t numbytes = get_numbytes(cmd); // cmd.g7byte3 & 0x7f) | ((cmd.grp7msb << 3) & 0x80);
     uint32_t addy = get_address(cmd);      // (cmd.g7byte5 & 0x7f) | ((cmd.grp7msb << 5) & 0x80);
+#ifdef ESP_PLATFORM // OS
     unsigned short mw = uxQueueMessagesWaiting(rxq);
+#else
+    unsigned short mw;
+#endif
 
-    Debug_printf("\r\nDevice %02x READ %04x bytes from address %06x\n", id(), numbytes, addy);
+    Debug_printf("\r\nDevice %02x READ %04x bytes from address %06lx\n", id(), numbytes, addy);
 
     memset(data_buffer, 0, sizeof(data_buffer));
 
@@ -197,14 +185,16 @@ void iwmCPM::iwm_read(iwm_decoded_cmd_t cmd)
     {
         if (mw < numbytes) //if there are less than requested, just send what we have
         {
-            numbytes = mw;  
-        }       
+            numbytes = mw;
+        }
 
         data_len = 0;
         for (int i = 0; i < numbytes; i++)
         {
             char b;
+#ifdef ESP_PLATFORM // OS
             xQueueReceive(rxq, &b, portMAX_DELAY);
+#endif
             data_buffer[i] = b;
             data_len++;
         }
@@ -239,8 +229,10 @@ void iwmCPM::iwm_write(iwm_decoded_cmd_t cmd)
 
     {
         // DO write
+#ifdef ESP_PLATFORM // OS
         for (int i = 0; i < num_bytes; i++)
             xQueueSend(txq, &data_buffer[i], portMAX_DELAY);
+#endif
     }
 
     send_reply_packet(SP_ERR_NOERROR);
@@ -263,19 +255,23 @@ void iwmCPM::iwm_ctrl(iwm_decoded_cmd_t cmd)
         switch (control_code)
         {
         case 'B': // Boot
-            if (!fnSystem.spifix())
+#ifdef ESP_PLATFORM // OS
+            if (!fnSystem.hasbuffer())
             {
                 err_result = SP_ERR_OFFLINE;
-                Debug_printf("FujiApple SPI Fix Missing, not starting CP/M\n");
+                Debug_printf("FujiApple HASBUFFER Missing, not starting CP/M\n");
             }
             else
+#endif
             {
                 Debug_printf("!!! STARTING CP/M TASK!!!\n");
+#ifdef ESP_PLATFORM // OS
                 if (cpmTaskHandle != NULL)
                 {
-                    break;
+                        break;
                 }
                 xTaskCreatePinnedToCore(cpmTask, "cpmtask", 32768, NULL, CPM_TASK_PRIORITY, &cpmTaskHandle, 1);
+#endif
             }
             break;
         }
@@ -287,31 +283,38 @@ void iwmCPM::iwm_ctrl(iwm_decoded_cmd_t cmd)
 
 void iwmCPM::process(iwm_decoded_cmd_t cmd)
 {
+    // Respond with device offline if cp/m is disabled
+    if ( !Config.get_cpm_enabled() )
+    {
+        iwm_return_device_offline(cmd);
+        return;
+    }
+
     switch (cmd.command)
     {
-    case 0x00: // status
+    case SP_CMD_STATUS:
         Debug_printf("\r\nhandling status command");
         iwm_status(cmd);
         break;
-    case 0x04: // control
+    case SP_CMD_CONTROL:
         Debug_printf("\r\nhandling control command");
         iwm_ctrl(cmd);
         break;
-    case 0x06: // open
+    case SP_CMD_OPEN:
         Debug_printf("\r\nhandling open command");
         iwm_open(cmd);
         break;
-    case 0x07: // close
+    case SP_CMD_CLOSE:
         Debug_printf("\r\nhandling close command");
         iwm_close(cmd);
         break;
-    case 0x08: // read
+    case SP_CMD_READ:
         fnLedManager.set(LED_BUS, true);
         Debug_printf("\r\nhandling read command");
         iwm_read(cmd);
         fnLedManager.set(LED_BUS, false);
         break;
-    case 0x09: // write
+    case SP_CMD_WRITE:
         fnLedManager.set(LED_BUS, true);
         Debug_printf("\r\nHandling write command");
         iwm_write(cmd);

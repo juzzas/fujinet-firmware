@@ -95,6 +95,7 @@ drivewireModem::~drivewireModem()
     if (modemSniffer != nullptr)
     {
         delete modemSniffer;
+        modemSniffer = nullptr;
     }
 
     if (telnet != nullptr)
@@ -129,8 +130,12 @@ void drivewireModem::at_connect_resultCode(int modemBaud)
         resultCode = 1;
         break;
     }
+#ifdef RESULT_CODE_USED
     // drivewire_send_int(resultCode);
-    // fnUartBUS.write(ASCII_CR);
+#else /* RESULT_CODE_USED */
+    (void) resultCode; // silence unused warning
+#endif /* RESULT_CODE_USED */
+    // fnDwCom.write(ASCII_CR);
 }
 
 /**
@@ -462,7 +467,7 @@ void drivewireModem::at_handle_answer()
         CRX = true;
 
         cmdMode = false;
-        fnUartBUS.flush();
+        fnDwCom.flush();
         answerHack = false;
     }
 }
@@ -1003,11 +1008,11 @@ void drivewireModem::modemCommand()
 
 //         // In command mode - don't exchange with TCP but gather characters to a string
 //         //if (SIO_UART.available() /*|| blockWritePending == true */ )
-//         if (fnUartBUS.available() > 0)
+//         if (fnDwCom.available() > 0)
 //         {
 //             // get char from Atari SIO
 //             //char chr = SIO_UART.read();
-//             char chr = fnUartBUS.read();
+//             char chr = fnDwCom.read();
 
 //             // Return, enter, new line, carriage return.. anything goes to end the command
 //             if ((chr == ASCII_LF) || (chr == ASCII_CR))
@@ -1214,17 +1219,6 @@ void drivewireModem::shutdown()
     if (modemSniffer != nullptr)
         if (modemSniffer->getEnable())
             modemSniffer->closeOutput();
-}
-
-/*
-  Process command
-*/
-void drivewireModem::drivewire_process(uint32_t commanddata, uint8_t checksum)
-{
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
-
-    fnUartDebug.printf("drivewire_process() not implemented yet for this device. Cmd received: %02x\n", cmdFrame.comnd);
 }
 
 #endif /* NEW_TARGET */

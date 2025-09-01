@@ -142,7 +142,7 @@ private:
         AT_O,
         AT_ENUMCOUNT};
 
-    uint modemBaud = 115200; // Holds modem baud rate, Default 300
+    unsigned int modemBaud = 115200; // Holds modem baud rate, Default 300
     bool DTR = false;
     bool RTS = false;
     bool XMT = false;
@@ -183,8 +183,6 @@ private:
     long answerTimer;
     bool answered=false;
 
-    void drivewire_process(uint32_t commanddata, uint8_t checksum) override;
-    
     void crx_toggle(bool toggle);                // CRX active/inactive?
 
     void modemCommand(); // Execute modem AT command
@@ -221,7 +219,6 @@ public:
     drivewireModem(FileSystem *_fs, bool snifferEnable);
     virtual ~drivewireModem();
 
-    UARTManager* get_uart() { return uart; }
     void set_uart(UARTManager *_uart) { uart = _uart; }
 
 

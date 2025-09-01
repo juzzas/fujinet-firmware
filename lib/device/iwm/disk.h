@@ -41,13 +41,18 @@ protected:
     uint8_t smartport_device_type();
     uint8_t smartport_device_subtype();
 
+    uint8_t create_status();
+    std::vector<uint8_t> create_blocksize(bool is_32_bits = false);
+
 public:
     uint8_t blank_header_type = 0; // unadorned by default.
     iwmDisk();
-    mediatype_t mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type = MEDIATYPE_UNKNOWN);
+    fujiHost *host = nullptr;
+    mediatype_t mount(fnFile *f, const char *filename, uint32_t disksize, mediatype_t disk_type = MEDIATYPE_UNKNOWN);
+    virtual mediatype_t mount_file(fnFile *f, uint32_t disksize, mediatype_t disk_type);
     void unmount();
-    bool write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors);
-    bool write_blank(FILE *f, uint16_t numBlocks);
+    bool write_blank(fnFile *f, uint16_t sectorSize, uint16_t numSectors);
+    bool write_blank(fnFile *f, uint16_t numBlocks);
 
     void set_disk_number(char c) { disk_num = c; }
     char get_disk_number() { return disk_num; };

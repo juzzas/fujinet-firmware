@@ -2,7 +2,7 @@
 #define DEVICE_MODEM_H
 
 #ifdef BUILD_ATARI
-# include "../modem/modem.h"
+# include "sio/modem.h"
   extern modem *sioR;
 #endif
 
@@ -41,13 +41,18 @@ extern adamModem *sioR;
   extern iwmModem *sioR;
 #endif
 
+#ifdef BUILD_MAC
+#include "mac/modem.h"
+  extern macModem *sioR;
+#endif
+
 #ifdef BUILD_CX16
 #include "cx16_i2c/modem.h"
-extern cx16Modem *sioR;
+  extern cx16Modem *sioR;
 #endif
 
 #ifdef BUILD_RC2014
-# include "rc2014/modem.h"
+#include "rc2014/modem.h"
   extern rc2014Modem *sioR;
 #endif
 

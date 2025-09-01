@@ -1,6 +1,9 @@
 #ifdef FLASH_LITTLEFS
 
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+
 #include "fnFsLittleFS.h"
+#include "fnFileLocal.h"
 
 #include <esp_vfs.h>
 #include <errno.h>
@@ -128,7 +131,7 @@ bool FileSystemLittleFS::create_path(const char *fullpath)
                is (end - fullpath) + 2
             */
             strlcpy(segment, fullpath, end - fullpath + (done ? 2 : 1));
-            Debug_printf("Checking/creating directory: \"%s\"\r\n", segment);
+            //Debug_printf("Checking/creating directory: \"%s\"\r\n", segment);
             if ( !exists(segment) )
             {
                 if( !std::filesystem::create_directory(segment) )
@@ -151,6 +154,15 @@ FILE * FileSystemLittleFS::file_open(const char* path, const char* mode)
     free(fpath);
     return result;
 }
+
+#ifndef FNIO_IS_STDIO
+FileHandler * FileSystemLittleFS::filehandler_open(const char* path, const char* mode)
+{
+    Debug_printf("FileSystemLittleFS::filehandler_open %s %s\n", path, mode);
+    FILE * fh = file_open(path, mode);
+    return (fh == nullptr) ? nullptr : new FileHandlerLocal(fh);
+}
+#endif
 
 bool FileSystemLittleFS::exists(const char* path)
 {
@@ -212,7 +224,7 @@ bool FileSystemLittleFS::start()
 
     esp_vfs_littlefs_conf_t conf = {
       .base_path = "",
-      .partition_label = "flash",
+      .partition_label = "storage",
       .format_if_mount_failed = false,
       .dont_mount = false
     };
@@ -237,9 +249,6 @@ bool FileSystemLittleFS::start()
         Debug_printv("  partition size: %u, used: %u, free: %u\r\n", total, used, total-used);
         */
     #endif
-
-        // Create SYSTEM DIR if it doesn't exist
-        //create_path( SYSTEM_DIR );
     }
 
     return _started;

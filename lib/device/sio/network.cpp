@@ -7,7 +7,10 @@
 #include "network.h"
 
 #include <cstring>
+#include <string>
 #include <algorithm>
+#include <vector>
+#include <memory>
 
 #include "../../include/debug.h"
 #include "../../include/pinmap.h"
@@ -30,10 +33,16 @@
 
 using namespace std;
 
+//
+// TODO: add checksum handling when calling bus_to_peripheral() !
+//
+
+
 /**
  * Static callback function for the interrupt rate limiting timer. It sets the interruptProceed
  * flag to true. This is set to false when the interrupt is serviced.
  */
+#ifdef ESP_PLATFORM
 void onTimer(void *info)
 {
     sioNetwork *parent = (sioNetwork *)info;
@@ -41,6 +50,7 @@ void onTimer(void *info)
     parent->interruptProceed = !parent->interruptProceed;
     portEXIT_CRITICAL_ISR(&parent->timerMux);
 }
+#endif
 
 /**
  * Constructor
@@ -61,16 +71,25 @@ sioNetwork::sioNetwork()
  */
 sioNetwork::~sioNetwork()
 {
+#ifndef ESP_PLATFORM // TODO apc: can be be in both?
+    timer_stop();
+#endif
+
+    // first, delete protocol instance
+    if (protocol != nullptr)
+        delete protocol;
+    protocol = nullptr;
+
+    // then delete all buffers
     receiveBuffer->clear();
     transmitBuffer->clear();
     specialBuffer->clear();
-
-    if (receiveBuffer != nullptr)
-        delete receiveBuffer;
-    if (transmitBuffer != nullptr)
-        delete transmitBuffer;
-    if (specialBuffer != nullptr)
-        delete specialBuffer;
+    delete receiveBuffer;
+    delete transmitBuffer;
+    delete specialBuffer;
+    receiveBuffer = nullptr;
+    transmitBuffer = nullptr;
+    specialBuffer = nullptr;
 }
 
 /** SIO COMMANDS ***************************************************************/
@@ -82,20 +101,43 @@ sioNetwork::~sioNetwork()
  */
 void sioNetwork::sio_open()
 {
-    Debug_println("sioNetwork::sio_open()\n");
+    Debug_println("sioNetwork::sio_open()");
 
-    sio_ack();
+    sio_late_ack();
+
+    auto prevCapacity = newData.capacity();
+    newData.resize(NEWDATA_SIZE);
+    auto newCapacity = newData.capacity();
+
+    if (newCapacity < NEWDATA_SIZE || newData.size() != NEWDATA_SIZE) {
+        Debug_printv("Could not allocate write buffer prev: %d, requested: %d\n", prevCapacity, NEWDATA_SIZE);
+        sio_error();
+        return;
+    }
 
     channelMode = PROTOCOL;
 
     // Delete timer if already extant.
     timer_stop();
 
-    // persist aux1/aux2 values
+    // persist aux1/aux2 values - NOTHING USES THEM!
     open_aux1 = cmdFrame.aux1;
-    open_aux2 = cmdFrame.aux2;
-    open_aux2 |= trans_aux2;
-    cmdFrame.aux2 |= trans_aux2;
+
+    // Ignore aux2 value if NTRANS set 0xFF, for ACTION!
+    if (trans_aux2 == 0xFF)
+    {
+        open_aux2 = cmdFrame.aux2 = 0;
+    }
+    else if (cmdFrame.aux1 == 6) // don't xlate dir listings.
+    {
+        open_aux2 = cmdFrame.aux2;
+    }
+    else
+    {
+        open_aux2 = cmdFrame.aux2;
+        open_aux2 |= trans_aux2;
+        cmdFrame.aux2 |= trans_aux2;
+    }
 
     // Shut down protocol if we are sending another open before we close.
     if (protocol != nullptr)
@@ -109,6 +151,15 @@ void sioNetwork::sio_open()
     {
         delete protocolParser;
         protocolParser = nullptr;
+    }
+
+    if (json != nullptr) {
+        delete json;
+        json = nullptr;
+    }
+
+    if (urlParser != nullptr) {
+        urlParser = nullptr;
     }
 
     // Reset status buffer
@@ -126,12 +177,12 @@ void sioNetwork::sio_open()
             protocolParser = nullptr;
         }
 
-        sio_error();
+        // sio_error() - was already called from parse_and_instantiate_protocol()
         return;
     }
 
     // Attempt protocol open
-    if (protocol->open(urlParser, &cmdFrame) == true)
+    if (protocol->open(urlParser.get(), &cmdFrame) == true)
     {
         status.error = protocol->error;
         Debug_printf("Protocol unable to make connection. Error: %d\n", status.error);
@@ -142,6 +193,7 @@ void sioNetwork::sio_open()
             delete protocolParser;
             protocolParser = nullptr;
         }
+
         sio_error();
         return;
     }
@@ -150,7 +202,7 @@ void sioNetwork::sio_open()
     timer_start();
 
     // Go ahead and send an interrupt, so Atari knows to get status.
-    sio_assert_interrupt();
+    protocol->forceStatus = true;
 
     // TODO: Finally, go ahead and let the parsers know
     json = new FNJSON();
@@ -168,8 +220,11 @@ void sioNetwork::sio_open()
  */
 void sioNetwork::sio_close()
 {
-    Debug_printf("sioNetwork::sio_close()\n");
+    // Debug_printf("sioNetwork::sio_close()\n");
 
+#ifdef ESP_PLATFORM
+    long before_heap = esp_get_free_internal_heap_size();
+#endif
     sio_ack();
 
     status.reset();
@@ -193,15 +248,20 @@ void sioNetwork::sio_close()
     else
         sio_complete();
 
-    Debug_printf("Before protocol delete %lu\n",esp_get_free_heap_size());
     // Delete the protocol object
     delete protocol;
     protocol = nullptr;
 
     if (json != nullptr)
+    {
         delete json;
+        json = nullptr;
+    }
 
-    Debug_printf("After protocol delete %lu\n",esp_get_free_heap_size());
+#ifdef ESP_PLATFORM
+    long after_heap = esp_get_free_internal_heap_size();
+    Debug_printv("Before/After deleting: %lu/%lu (diff: %lu)", before_heap, after_heap, after_heap - before_heap);
+#endif
 }
 
 /**
@@ -216,7 +276,9 @@ void sioNetwork::sio_read()
     unsigned short num_bytes = sio_get_aux();
     bool err = false;
 
-    Debug_printf("sioNetwork::sio_read( %d bytes)\n", num_bytes);
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("sioNetwork::sio_read(%d bytes)\n", num_bytes);
+#endif
 
     sio_ack();
 
@@ -248,6 +310,7 @@ void sioNetwork::sio_read()
     // And send off to the computer
     bus_to_computer((uint8_t *)receiveBuffer->data(), num_bytes, err);
     receiveBuffer->erase(0, num_bytes);
+    receiveBuffer->shrink_to_fit();
 }
 
 /**
@@ -293,18 +356,13 @@ bool sioNetwork::sio_read_channel(unsigned short num_bytes)
 void sioNetwork::sio_write()
 {
     unsigned short num_bytes = sio_get_aux();
-    uint8_t *newData;
     bool err = false;
 
-    newData = (uint8_t *)malloc(num_bytes);
-    Debug_printf("sioNetwork::sio_write( %d bytes)\n", num_bytes);
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("sioNetwork::sio_write(%d bytes)\n", num_bytes);
+#endif
 
-    if (newData == nullptr)
-    {
-        Debug_printf("Could not allocate %u bytes.\n", num_bytes);
-    }
-
-    sio_ack();
+    // sio_ack(); // apc: not yet
 
     // If protocol isn't connected, then return not connected.
     if (protocol == nullptr)
@@ -319,10 +377,11 @@ void sioNetwork::sio_write()
         return;
     }
 
+    sio_late_ack();
+
     // Get the data from the Atari
-    bus_to_peripheral(newData, num_bytes);
-    *transmitBuffer += string((char *)newData, num_bytes);
-    free(newData);
+    bus_to_peripheral(newData.data(), num_bytes); // TODO test checksum
+    *transmitBuffer += string((char *)newData.data(), num_bytes);
 
     // Do the channel write
     err = sio_write_channel(num_bytes);
@@ -333,7 +392,9 @@ void sioNetwork::sio_write()
         sio_complete();
     }
     else
+    {
         sio_error();
+    }
 }
 
 /**
@@ -386,7 +447,9 @@ void sioNetwork::sio_status_local()
     uint8_t ipDNS[4];
     uint8_t default_status[4] = {0, 0, 0, 0};
 
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("sioNetwork::sio_status_local(%u)\n", cmdFrame.aux2);
+#endif
 
     fnSystem.Net.get_ip4_info((uint8_t *)ipAddress, (uint8_t *)ipNetmask, (uint8_t *)ipGateway);
     fnSystem.Net.get_ip4_dns_info((uint8_t *)ipDNS);
@@ -394,19 +457,27 @@ void sioNetwork::sio_status_local()
     switch (cmdFrame.aux2)
     {
     case 1: // IP Address
+#ifdef VERBOSE_PROTOCOL
         Debug_printf("IP Address: %u.%u.%u.%u\n", ipAddress[0], ipAddress[1], ipAddress[2], ipAddress[3]);
+#endif
         bus_to_computer(ipAddress, 4, false);
         break;
     case 2: // Netmask
+#ifdef VERBOSE_PROTOCOL
         Debug_printf("Netmask: %u.%u.%u.%u\n", ipNetmask[0], ipNetmask[1], ipNetmask[2], ipNetmask[3]);
+#endif
         bus_to_computer(ipNetmask, 4, false);
         break;
     case 3: // Gatway
+#ifdef VERBOSE_PROTOCOL
         Debug_printf("Gateway: %u.%u.%u.%u\n", ipGateway[0], ipGateway[1], ipGateway[2], ipGateway[3]);
+#endif
         bus_to_computer(ipGateway, 4, false);
         break;
     case 4: // DNS
+#ifdef VERBOSE_PROTOCOL
         Debug_printf("DNS: %u.%u.%u.%u\n", ipDNS[0], ipDNS[1], ipDNS[2], ipDNS[3]);
+#endif
         bus_to_computer(ipDNS, 4, false);
         break;
     default:
@@ -432,17 +503,27 @@ void sioNetwork::sio_status_channel()
     uint8_t serialized_status[4] = {0, 0, 0, 0};
     bool err = false;
 
-    Debug_printf("sioNetwork::sio_status_channel(%u)\n", channelMode);
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("sioNetwork::sio_status_channel(mode: %u)\n", channelMode);
+#endif
 
     switch (channelMode)
     {
     case PROTOCOL:
-        err = protocol->status(&status);
+        if (protocol == nullptr) {
+            Debug_printf("ERROR: Calling status on a null protocol.\r\n");
+            err = true;
+            status.error = true;
+        } else {
+            err = protocol->status(&status);
+        }
         break;
     case JSON:
         sio_status_channel_json(&status);
         break;
     }
+    // clear forced flag (first status after open)
+    protocol->forceStatus = false;
 
     // Serialize status into status bytes
     serialized_status[0] = status.rxBytesWaiting & 0xFF;
@@ -450,8 +531,8 @@ void sioNetwork::sio_status_channel()
     serialized_status[2] = status.connected;
     serialized_status[3] = status.error;
 
-    Debug_printf("sio_status_channel() - BW: %u C: %u E: %u\n",
-                 status.rxBytesWaiting, status.connected, status.error);
+    // leaving this one to print
+    Debug_printf("sio_status_channel() - BW: %u C: %u E: %u\n", status.rxBytesWaiting, status.connected, status.error);
 
     // and send to computer
     bus_to_computer(serialized_status, sizeof(serialized_status), err);
@@ -483,75 +564,73 @@ void sioNetwork::sio_set_prefix()
 
     memset(prefixSpec, 0, sizeof(prefixSpec));
 
-    bus_to_peripheral(prefixSpec, sizeof(prefixSpec));
+    bus_to_peripheral(prefixSpec, sizeof(prefixSpec)); // TODO test checksum
     util_devicespec_fix_9b(prefixSpec, sizeof(prefixSpec));
 
     prefixSpec_str = string((const char *)prefixSpec);
     prefixSpec_str = prefixSpec_str.substr(prefixSpec_str.find_first_of(":") + 1);
+
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("sioNetwork::sio_set_prefix(%s)\n", prefixSpec_str.c_str());
+#endif
 
-    if (prefixSpec_str == "..") // Devance path N:..
-    {
-        vector<int> pathLocations;
-        for (int i = 0; i < prefix.size(); i++)
-        {
-            if (prefix[i] == '/')
-            {
-                pathLocations.push_back(i);
-            }
-        }
-
-        if (prefix[prefix.size() - 1] == '/')
-        {
-            // Get rid of last path segment.
-            pathLocations.pop_back();
-        }
-
-        // truncate to that location.
-        prefix = prefix.substr(0, pathLocations.back() + 1);
-    }
-    else if ((prefixSpec_str == "/") || (prefixSpec_str == ">")) // Go back to hostname.
-    {
-        // TNFS://foo.com/path
-        size_t pos = prefix.find("/");
-        
-        if (pos == string::npos)
-            prefix.clear();
-        
-        pos = prefix.find("/",++pos);
-
-        if (pos == string::npos)
-            prefix.clear();
-
-        pos = prefix.find("/",++pos);
-
-        if (pos == string::npos)
-            prefix += "/";
-
-        pos = prefix.find("/",++pos);
-
-        prefix = prefix.substr(0,pos);
-    }
-    else if (prefixSpec_str[0] == '/') // N:/DIR
-    {
-        prefix = prefixSpec_str;
-    }
-    else if (prefixSpec_str.empty())
+    // If "NCD Nn:" then prefix is cleared completely
+    if (prefixSpec_str.empty())
     {
         prefix.clear();
     }
-    else if (prefixSpec_str.find_first_of(":") != string::npos)
+    else 
     {
-        prefix = prefixSpec_str;
-    }
-    else // append to path.
-    {
-        prefix += prefixSpec_str;
+        // Append trailing slash if not found
+        if (prefixSpec_str.back() != '/')
+        {
+            prefixSpec_str += "/";
+        }
+
+        // For the remaining cases, append trailing slash if not found
+        if (prefix.back() != '/')
+        {
+            prefix += "/";
+        }
+
+        // Find pos of 3rd "/" in prefix
+        size_t pos = prefix.find("/");
+        pos = prefix.find("/",++pos);
+        pos = prefix.find("/",++pos);
+
+        // If "NCD Nn:.."" or "NCD .." then devance prefix
+        if (prefixSpec_str == ".." || prefixSpec_str == "<")
+        {
+            prefix += ".."; // call to canonical path later will resolve
+        }
+        // If "NCD Nn:/" or "NCD /" then truncate to hostname (e.g. TNFS://hostname/)
+        else if (prefixSpec_str == "/" || prefixSpec_str == ">")
+        {
+            // truncate at pos of 3rd slash
+            prefix = prefix.substr(0,pos+1);
+        }
+        // If "NCD Nn:/path/to/dir/" then concatenate hostname and prefix
+        else if (prefixSpec_str[0] == '/') // N:/DIR
+        {
+            // append at pos of 3rd slash
+            prefix = prefix.substr(0,pos);
+            prefix += prefixSpec_str;
+        }
+        // If "NCD TNFS://foo.com/" then reset entire prefix
+        else if (prefixSpec_str.find_first_of(":") != string::npos)
+        {
+            prefix = prefixSpec_str;
+        }
+        else // append to path.
+        {
+            prefix += prefixSpec_str;
+        }
     }
 
     prefix = util_get_canonical_path(prefix);
-
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("Prefix now: %s\n", prefix.c_str());
+#endif
 
     // We are okay, signal complete.
     sio_complete();
@@ -585,7 +664,7 @@ void sioNetwork::sio_set_login()
     uint8_t loginSpec[256];
 
     memset(loginSpec, 0, sizeof(loginSpec));
-    bus_to_peripheral(loginSpec, sizeof(loginSpec));
+    bus_to_peripheral(loginSpec, sizeof(loginSpec)); // TODO test checksum
     util_devicespec_fix_9b(loginSpec, sizeof(loginSpec));
 
     login = string((char *)loginSpec);
@@ -600,7 +679,7 @@ void sioNetwork::sio_set_password()
     uint8_t passwordSpec[256];
 
     memset(passwordSpec, 0, sizeof(passwordSpec));
-    bus_to_peripheral(passwordSpec, sizeof(passwordSpec));
+    bus_to_peripheral(passwordSpec, sizeof(passwordSpec)); // TODO test checksum
     util_devicespec_fix_9b(passwordSpec, sizeof(passwordSpec));
 
     password = string((char *)passwordSpec);
@@ -628,7 +707,7 @@ void sioNetwork::sio_special()
         sio_special_40();
         break;
     case 0x80: // Payload to Peripheral
-        sio_ack();
+        sio_late_ack();
         sio_special_80();
         break;
     default:
@@ -648,7 +727,9 @@ void sioNetwork::sio_special_inquiry()
     // Acknowledge
     sio_ack();
 
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("sioNetwork::sio_special_inquiry(%02x)\n", cmdFrame.aux1);
+#endif
 
     do_inquiry(cmdFrame.aux1);
 
@@ -663,28 +744,37 @@ void sioNetwork::do_inquiry(unsigned char inq_cmd)
 
     // Ask protocol for dstats, otherwise get it locally.
     if (protocol != nullptr)
+    {
         inq_dstats = protocol->special_inquiry(inq_cmd);
+#ifdef VERBOSE_PROTOCOL
+        Debug_printf("protocol special_inquiry returned %d\r\n", inq_dstats);
+#endif
+    }
 
     // If we didn't get one from protocol, or unsupported, see if supported globally.
     if (inq_dstats == 0xFF)
     {
         switch (inq_cmd)
         {
-        case 0x20:
-        case 0x21:
-        case 0x23:
-        case 0x24:
-        case 0x2A:
-        case 0x2B:
-        case 0x2C:
-        case 0xFD:
-        case 0xFE:
+        case 0x20: // ' ' rename
+        case 0x21: // '!' delete
+        case 0x23: // '#' lock
+        case 0x24: // '$' unlock
+        case 0x2A: // '*' mkdir
+        case 0x2B: // '+' rmdir
+        case 0x2C: // ',' chdir/get prefix
+        case 0xFD: //     login
+        case 0xFE: //     password
             inq_dstats = 0x80;
             break;
-        case 0xFC:
+        case 0xFC: //     channel mode
             inq_dstats = 0x00;
             break;
-        case 0x30:
+        case 0xFB: // String Processing mode, only in JSON mode
+            if (channelMode == JSON)
+                inq_dstats = 0x00;
+            break;
+        case 0x30: // '0' set prefix
             inq_dstats = 0x40;
             break;
         case 'Z': // Set interrupt rate
@@ -707,7 +797,9 @@ void sioNetwork::do_inquiry(unsigned char inq_cmd)
         }
     }
 
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("inq_dstats = %u\n", inq_dstats);
+#endif
 }
 
 /**
@@ -729,6 +821,9 @@ void sioNetwork::sio_special_00()
         break;
     case 'Z':
         sio_set_timer_rate();
+        break;
+    case 0xFB: // JSON parameter wrangling
+        sio_set_json_parameters();
         break;
     case 0xFC: // SET CHANNEL MODE
         sio_set_channel_mode();
@@ -775,15 +870,15 @@ void sioNetwork::sio_special_80()
     // Handle commands that exist outside of an open channel.
     switch (cmdFrame.comnd)
     {
-    case 0x20: // RENAME
-    case 0x21: // DELETE
-    case 0x23: // LOCK
-    case 0x24: // UNLOCK
-    case 0x2A: // MKDIR
-    case 0x2B: // RMDIR
+    case 0x20: // RENAME  ' '
+    case 0x21: // DELETE  '!'
+    case 0x23: // LOCK    '#'
+    case 0x24: // UNLOCK  '$'
+    case 0x2A: // MKDIR   '*'
+    case 0x2B: // RMDIR   '+'
         sio_do_idempotent_command_80();
         return;
-    case 0x2C: // CHDIR
+    case 0x2C: // CHDIR   ','
         sio_set_prefix();
         return;
     case 'Q':
@@ -801,9 +896,11 @@ void sioNetwork::sio_special_80()
     memset(spData, 0, SPECIAL_BUFFER_SIZE);
 
     // Get special (devicespec) from computer
-    bus_to_peripheral(spData, SPECIAL_BUFFER_SIZE);
+    bus_to_peripheral(spData, SPECIAL_BUFFER_SIZE); // TODO test checksum
 
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("sioNetwork::sio_special_80() - %s\n", spData);
+#endif
 
     // Do protocol action and return
     if (protocol->special_80(spData, SPECIAL_BUFFER_SIZE, &cmdFrame) == false)
@@ -822,8 +919,8 @@ void sioNetwork::sio_process(uint32_t commanddata, uint8_t checksum)
     cmdFrame.commanddata = commanddata;
     cmdFrame.checksum = checksum;
 
-    Debug_printf("sioNetwork::sio_process 0x%02hx '%c': 0x%02hx, 0x%02hx\n",
-                 cmdFrame.comnd, cmdFrame.comnd, cmdFrame.aux1, cmdFrame.aux2);
+    // leaving this one to print
+    Debug_printf("sioNetwork::sio_process 0x%02hx '%c': 0x%02hx, 0x%02hx\n", cmdFrame.comnd, cmdFrame.comnd, cmdFrame.aux1, cmdFrame.aux2);
 
     switch (cmdFrame.comnd)
     {
@@ -856,7 +953,7 @@ void sioNetwork::sio_process(uint32_t commanddata, uint8_t checksum)
 }
 
 /**
- * Check to see if PROCEED needs to be asserted, and assert if needed.
+ * Check to see if PROCEED needs to be asserted, and assert if needed (continue toggling PROCEED).
  */
 void sioNetwork::sio_poll_interrupt()
 {
@@ -865,12 +962,23 @@ void sioNetwork::sio_poll_interrupt()
         if (protocol->interruptEnable == false)
             return;
 
+        /* assert interrupt if we need Status call from host to arrive */
+        if (protocol->forceStatus == true)
+        {
+            sio_assert_interrupt();
+            return;
+        }
+
         protocol->fromInterrupt = true;
         protocol->status(&status);
         protocol->fromInterrupt = false;
 
         if (status.rxBytesWaiting > 0 || status.connected == 0)
             sio_assert_interrupt();
+#ifndef ESP_PLATFORM
+        else
+            sio_clear_interrupt();
+#endif
 
         reservedSave = status.connected;
         errorSave = status.error;
@@ -898,6 +1006,7 @@ bool sioNetwork::instantiate_protocol()
         return false;
     }
 
+    // leaving this one to print
     Debug_printf("sioNetwork::instantiate_protocol() - Protocol %s created.\n", urlParser->scheme.c_str());
     return true;
 }
@@ -912,21 +1021,20 @@ void sioNetwork::create_devicespec()
     memset(devicespecBuf, 0, sizeof(devicespecBuf));
 
     // Get Devicespec from buffer, and put into primary devicespec string
-    bus_to_peripheral(devicespecBuf, sizeof(devicespecBuf));
+    bus_to_peripheral(devicespecBuf, sizeof(devicespecBuf)); // TODO test checksum
     util_devicespec_fix_9b(devicespecBuf, sizeof(devicespecBuf));
     deviceSpec = string((char *)devicespecBuf);
-
     deviceSpec = util_devicespec_fix_for_parsing(deviceSpec, prefix, cmdFrame.aux1 == 6, true);
 }
 
 /*
- * The resulting URL is then sent into EdURLParser to get our URLParser object which is used in the rest
+ * The resulting URL is then sent into a URL Parser to get our URLParser object which is used in the rest
  * of Network.
 */
 void sioNetwork::create_url_parser()
 {
     std::string url = deviceSpec.substr(deviceSpec.find(":") + 1);
-    urlParser = EdUrlParser::parseUrl(url);
+    urlParser = PeoplesUrlParser::parseURL(url);
 }
 
 void sioNetwork::parse_and_instantiate_protocol()
@@ -937,18 +1045,20 @@ void sioNetwork::parse_and_instantiate_protocol()
     // Invalid URL returns error 165 in status.
     if (!urlParser->isValidUrl())
     {
-        Debug_printf("Invalid devicespec: %s\n", deviceSpec.c_str());
+        Debug_printf("Invalid devicespec: >%s<\n", deviceSpec.c_str());
         status.error = NETWORK_ERROR_INVALID_DEVICESPEC;
         sio_error();
         return;
     }
 
-    Debug_printf("::parse_and_instantiate_protocol transformed to (%s, %s)\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("::parse_and_instantiate_protocol -> spec: >%s<, url: >%s<\r\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
+#endif
 
     // Instantiate protocol object.
     if (!instantiate_protocol())
     {
-        Debug_printf("Could not open protocol.\n");
+        Debug_printf("Could not open protocol. spec: >%s<, url: >%s<\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
         status.error = NETWORK_ERROR_GENERAL;
         sio_error();
         return;
@@ -960,6 +1070,7 @@ void sioNetwork::parse_and_instantiate_protocol()
  */
 void sioNetwork::timer_start()
 {
+#ifdef ESP_PLATFORM
     esp_timer_create_args_t tcfg;
     tcfg.arg = this;
     tcfg.callback = onTimer;
@@ -967,6 +1078,9 @@ void sioNetwork::timer_start()
     tcfg.name = nullptr;
     esp_timer_create(&tcfg, &rateTimerHandle);
     esp_timer_start_periodic(rateTimerHandle, timerRate * 1000);
+#else
+    lastInterruptMs = fnSystem.millis() - timerRate;
+#endif
 }
 
 /**
@@ -974,6 +1088,7 @@ void sioNetwork::timer_start()
  */
 void sioNetwork::timer_stop()
 {
+#ifdef ESP_PLATFORM
     // Delete existing timer
     if (rateTimerHandle != nullptr)
     {
@@ -982,6 +1097,7 @@ void sioNetwork::timer_stop()
         esp_timer_delete(rateTimerHandle);
         rateTimerHandle = nullptr;
     }
+#endif
 }
 
 /**
@@ -1030,8 +1146,35 @@ void sioNetwork::processCommaFromDevicespec()
  */
 void sioNetwork::sio_assert_interrupt()
 {
+#ifdef ESP_PLATFORM
     fnSystem.digital_write(PIN_PROC, interruptProceed == true ? DIGI_HIGH : DIGI_LOW);
+    // Debug_print(interruptProceed ? "+" : "-");
+#else
+    uint64_t ms = fnSystem.millis();
+    if (ms - lastInterruptMs >= timerRate)
+    {
+        interruptProceed = !interruptProceed;
+        fnSioCom.set_proceed(interruptProceed);
+        lastInterruptMs = ms;
+    }
+#endif
 }
+
+#ifndef ESP_PLATFORM
+/**
+ * Called to clear the PROCEED interrupt
+ */
+void sioNetwork::sio_clear_interrupt()
+{
+    if (interruptProceed) 
+    {
+        // Debug_println("clear interrupt");
+        interruptProceed = false;
+        fnSioCom.set_proceed(interruptProceed);
+        lastInterruptMs = fnSystem.millis();
+    }
+}
+#endif
 
 void sioNetwork::sio_set_translation()
 {
@@ -1048,12 +1191,10 @@ void sioNetwork::sio_parse_json()
 void sioNetwork::sio_set_json_query()
 {
     uint8_t in[256];
-    const char *inp = NULL;
-    uint8_t *tmp;
 
     memset(in, 0, sizeof(in));
 
-    uint8_t ck = bus_to_peripheral(in, sizeof(in));
+    bus_to_peripheral(in, sizeof(in)); // TODO test checksum
 
     // strip away line endings from input spec.
     for (int i = 0; i < 256; i++)
@@ -1062,23 +1203,65 @@ void sioNetwork::sio_set_json_query()
             in[i] = 0x00;
     }
 
-    inp = strrchr((const char *)in, ':');
-    
-    if (inp == NULL)
-    {
-        sio_error();
-        return;
+    std::string in_string(reinterpret_cast<char*>(in));
+    size_t last_colon_pos = in_string.rfind(':');
+
+    std::string inp_string;
+    if (last_colon_pos != std::string::npos) {
+        // Skip the device spec. There was a debug message here,
+        // but it was removed, because there are cases where
+        // removing the devicespec isn't possible, e.g. accessing
+        // via CIO (as an XIO). -thom
+        inp_string = in_string.substr(last_colon_pos + 1);
+    } else {
+        inp_string = in_string;
     }
 
-    inp++;
-    json->setReadQuery(string(inp), cmdFrame.aux2);
-    json_bytes_remaining = json->readValueLen();
-    tmp = (uint8_t *)malloc(json->readValueLen());
-    json->readValue(tmp,json_bytes_remaining);
-    *receiveBuffer += string((const char *)tmp,json_bytes_remaining);
-    free(tmp);
-    Debug_printf("Query set to %s\n",inp);
+    json->setReadQuery(inp_string, cmdFrame.aux2);
+    json_bytes_remaining = json->json_bytes_remaining;
+
+    std::vector<uint8_t> tmp(json_bytes_remaining);
+    json->readValue(tmp.data(), json_bytes_remaining);
+
+    // don't copy past first nul char in tmp
+    auto null_pos = std::find(tmp.begin(), tmp.end(), 0);
+    *receiveBuffer += std::string(tmp.begin(), null_pos);
+
+    Debug_printf("Query set to >%s<\r\n", inp_string.c_str());
     sio_complete();
+}
+
+void sioNetwork::sio_set_json_parameters()
+{
+    // aux1  | aux2    |    meaning
+    // 0     | 0/1/2   |  Set the json->_queryParam value, which is the translation value for string processing
+    // 1     |   c     |  Set the json->lineEnding = c, convert from char to single byte string
+
+    switch (cmdFrame.aux1)
+    {
+    case 0:     // JSON QUERY PARAM
+        if (cmdFrame.aux2 > 2)
+        {
+            sio_error();
+            return;
+        }
+        json->setQueryParam(cmdFrame.aux2);
+        sio_complete();
+        break;
+    case 1:     // LINE ENDING
+    {
+        std::stringstream ss;
+        ss << cmdFrame.aux2;
+        string new_le = ss.str();
+        Debug_printf("JSON line ending changed to 0x%02hx\r\n", cmdFrame.aux2);
+        json->setLineEnding(new_le);
+        sio_complete();
+        break;
+    }
+    default:
+        sio_error();
+        break;
+    }
 }
 
 void sioNetwork::sio_set_timer_rate()
@@ -1097,18 +1280,42 @@ void sioNetwork::sio_set_timer_rate()
 
 void sioNetwork::sio_do_idempotent_command_80()
 {
-    sio_ack();
+    Debug_printf("sioNetwork::sio_do_idempotent_command_80()\r\n");
+    // sio_ack() - was already called from sio_special()
 
+    // Shut down protocol left from previous command, if any
+    if (protocol != nullptr)
+    {
+        protocol->close();
+        delete protocol;
+        protocol = nullptr;
+    }
+
+    if (protocolParser != nullptr)
+    {
+        delete protocolParser;
+        protocolParser = nullptr;
+    }
+
+    // Reset status buffer
+    status.reset();
+
+    // Parse and instantiate protocol
     parse_and_instantiate_protocol();
 
     if (protocol == nullptr)
     {
         Debug_printf("Protocol = NULL\n");
-        sio_error();
+        if (protocolParser != nullptr)
+        {
+            delete protocolParser;
+            protocolParser = nullptr;
+        }
+        // sio_error() - was already called from parse_and_instantiate_protocol()
         return;
     }
 
-    if (protocol->perform_idempotent_80(urlParser, &cmdFrame) == true)
+    if (protocol->perform_idempotent_80(urlParser.get(), &cmdFrame) == true)
     {
         Debug_printf("perform_idempotent_80 failed\n");
         sio_error();

@@ -18,6 +18,7 @@ iwmPrinter::iwmPrinter(FileSystem *filesystem, printer_type printer_type)
 iwmPrinter::~iwmPrinter()
 {
     delete _pptr;
+    _pptr = nullptr;
 }
 
 void iwmPrinter::send_status_reply_packet()
@@ -42,70 +43,27 @@ void iwmPrinter::send_extended_status_reply_packet()
 
 void iwmPrinter::send_status_dib_reply_packet()
 {
-    uint8_t data[25];
-
-    data[0] = 0b01110000;
-    data[1] = data[2] = data[3] = 0;
-    data[4] = 7;
-    data[5] = 'P';
-    data[6] = 'R';
-    data[7] = 'I';
-    data[8] = 'N';
-    data[9] = 'T';
-    data[10] = 'E';
-    data[11] = 'R';
-    data[12] = ' ';
-    data[13] = ' ';
-    data[14] = ' ';
-    data[15] = ' ';
-    data[16] = ' ';
-    data[17] = ' ';
-    data[18] = ' ';
-    data[19] = ' ';
-    data[20] = ' ';
-    data[21] = SP_TYPE_BYTE_FUJINET_PRINTER;
-    data[22] = SP_SUBTYPE_BYTE_FUJINET_PRINTER;
-    data[23] = 0x00;
-    data[24] = 0x01;
-
-    IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data, 25);
+    Debug_printf("\r\nPRINTER: Sending DIB reply\r\n");
+    std::vector<uint8_t> data = create_dib_reply_packet(
+        "PRINTER",                                                          // name
+        0b01110000,                                                         // status
+        { 0, 0, 0 },                                                        // block size
+        { SP_TYPE_BYTE_FUJINET_PRINTER, SP_SUBTYPE_BYTE_FUJINET_PRINTER },  // type, subtype
+        { 0x00, 0x01 }                                                      // version.
+    );
+    IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data.data(), data.size());
 }
 
 void iwmPrinter::send_extended_status_dib_reply_packet()
 {
-    uint8_t data[25];
-
-    data[0] = 0b01110000;
-    data[1] = data[2] = data[3] = 0;
-    data[4] = 7;
-    data[5] = 'P';
-    data[6] = 'R';
-    data[7] = 'I';
-    data[8] = 'N';
-    data[9] = 'T';
-    data[10] = 'E';
-    data[11] = 'R';
-    data[12] = ' ';
-    data[13] = ' ';
-    data[14] = ' ';
-    data[15] = ' ';
-    data[16] = ' ';
-    data[17] = ' ';
-    data[18] = ' ';
-    data[19] = ' ';
-    data[20] = ' ';
-    data[21] = SP_TYPE_BYTE_FUJINET_PRINTER;
-    data[22] = SP_SUBTYPE_BYTE_FUJINET_PRINTER;
-    data[23] = 0x00;
-    data[24] = 0x01;
-
-    IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data, 25);
+    send_status_dib_reply_packet();
 }
 
 void iwmPrinter::iwm_status(iwm_decoded_cmd_t cmd)
 {
-    Debug_printf("\nPrinter: Status cmd %02X\n", cmd.command);
-    switch (get_status_code(cmd))
+    uint8_t status_code = get_status_code(cmd); 
+    Debug_printf("\r\n[PRINTER]: Device: %02x Status Code %02x\r\n", id(), status_code);
+    switch (status_code)
     {
     case IWM_STATUS_STATUS:
         send_status_reply_packet();
@@ -134,7 +92,7 @@ void iwmPrinter::iwm_write(iwm_decoded_cmd_t cmd)
 {
     uint16_t num_bytes = get_numbytes(cmd);
 
-    Debug_printf("\nPrinter: Write %u bytes to address %04x\n", num_bytes);
+    Debug_printf("\nPrinter: Write %u bytes\n", num_bytes);
 
     data_len = num_bytes;
     IWM.iwm_decode_data_packet((unsigned char *)data_buffer, data_len);
@@ -185,16 +143,16 @@ void iwmPrinter::process(iwm_decoded_cmd_t cmd)
     fnLedManager.set(LED_BUS, true);
     switch (cmd.command)
     {
-    case 0x00: // status
+    case SP_CMD_STATUS:
         iwm_status(cmd);
         break;
-    case 0x06: // open
+    case SP_CMD_OPEN:
         iwm_open(cmd);
         break;
-    case 0x07: // close
+    case SP_CMD_CLOSE:
         iwm_close(cmd);
         break;
-    case 0x09: // write
+    case SP_CMD_WRITE:
         iwm_write(cmd);
         break;
     default:
@@ -208,7 +166,10 @@ void iwmPrinter::process(iwm_decoded_cmd_t cmd)
 void iwmPrinter::set_printer_type(iwmPrinter::printer_type printer_type)
 {
     // Destroy any current printer emu object
-    delete _pptr;
+    if (_pptr != nullptr)
+    {
+        delete _pptr;
+    }
 
     _ptype = printer_type;
     switch (printer_type)

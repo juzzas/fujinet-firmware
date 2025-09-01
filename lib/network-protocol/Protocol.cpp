@@ -5,12 +5,16 @@
 #include "Protocol.h"
 
 #include <algorithm>
+#include <errno.h>
 
 #include "../../include/debug.h"
 
+#include "compat_inet.h"
 #include "status_error_codes.h"
 #include "utils.h"
 #include "string_utils.h"
+
+#include <vector>
 
 
 using namespace std;
@@ -66,12 +70,13 @@ using namespace std;
  * @param tx_buf pointer to transmit buffer
  * @param sp_buf pointer to special buffer
  */
-NetworkProtocol::NetworkProtocol(string *rx_buf,
-                                 string *tx_buf,
-                                 string *sp_buf)
+NetworkProtocol::NetworkProtocol(std::string *rx_buf,
+                                 std::string *tx_buf,
+                                 std::string *sp_buf)
 {
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("NetworkProtocol::ctor()\r\n");
-
+#endif
     receiveBuffer = rx_buf;
     transmitBuffer = tx_buf;
     specialBuffer = sp_buf;
@@ -84,7 +89,9 @@ NetworkProtocol::NetworkProtocol(string *rx_buf,
  */
 NetworkProtocol::~NetworkProtocol()
 {
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("NetworkProtocol::dtor()\r\n");
+#endif
     receiveBuffer->clear();
     transmitBuffer->clear();
     specialBuffer->clear();
@@ -98,12 +105,10 @@ NetworkProtocol::~NetworkProtocol()
  * @param urlParser The URL object passed in to open.
  * @param cmdFrame The command frame to extract aux1/aux2/etc.
  */
-bool NetworkProtocol::open(EdUrlParser *urlParser, cmdFrame_t *cmdFrame)
+bool NetworkProtocol::open(PeoplesUrlParser *urlParser, cmdFrame_t *cmdFrame)
 {
     // Set translation mode, Bits 0-1 of aux2
     translation_mode = cmdFrame->aux2 & 0x7F; // we now have more xlation modes.
-
-    Debug_printf("translation mode = %u",translation_mode);
 
     // Persist aux1/aux2 values for later.
     aux1_open = cmdFrame->aux1;
@@ -112,6 +117,16 @@ bool NetworkProtocol::open(EdUrlParser *urlParser, cmdFrame_t *cmdFrame)
     opened_url = urlParser;
 
     return false;
+}
+
+void NetworkProtocol::set_open_params(uint8_t p1, uint8_t p2)
+{
+    aux1_open = p1;
+    aux2_open = p2;
+    translation_mode = p2 & 0x7F;
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("Changed open params to aux1_open = %d, aux2_open = %d. Set translation_mode to %d\r\n", p1, p2, translation_mode);
+#endif
 }
 
 /**
@@ -125,6 +140,10 @@ bool NetworkProtocol::close()
     receiveBuffer->clear();
     transmitBuffer->clear();
     specialBuffer->clear();
+    receiveBuffer->shrink_to_fit();
+    transmitBuffer->shrink_to_fit();
+    specialBuffer->shrink_to_fit();
+    
     error = 1;
     return false;
 }
@@ -136,7 +155,9 @@ bool NetworkProtocol::close()
  */
 bool NetworkProtocol::read(unsigned short len)
 {
+#ifdef VERBOSE_PROTOCOL
     Debug_printf("NetworkProtocol::read(%u)\r\n", len);
+#endif
     translate_receive_buffer();
     error = 1;
     return false;
@@ -160,7 +181,10 @@ bool NetworkProtocol::write(unsigned short len)
  */
 bool NetworkProtocol::status(NetworkStatus *status)
 {
-    if (receiveBuffer->length() == 0 && status->rxBytesWaiting > 0)
+    if (fromInterrupt)   
+        return false;
+ 
+    if (!is_write && receiveBuffer->length() == 0 && status->rxBytesWaiting > 0)
         read(status->rxBytesWaiting);
 
     status->rxBytesWaiting = receiveBuffer->length();
@@ -176,6 +200,9 @@ bool NetworkProtocol::status(NetworkStatus *status)
   */
 void NetworkProtocol::translate_receive_buffer()
 {
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("#### Translating receive buffer, mode: %u\r\n", translation_mode);
+#endif
     if (translation_mode == 0)
         return;
 
@@ -200,8 +227,10 @@ void NetworkProtocol::translate_receive_buffer()
     #endif
         break;
     case TRANSLATION_MODE_PETSCII:
+#ifdef VERBOSE_PROTOCOL
         Debug_printf("!!! PETSCII !!!\r\n");
-        mstr::toPETSCII(*receiveBuffer);
+#endif
+        *receiveBuffer = mstr::toUTF8(*receiveBuffer);
         break;
     }
 
@@ -215,6 +244,9 @@ void NetworkProtocol::translate_receive_buffer()
  */
 unsigned short NetworkProtocol::translate_transmit_buffer()
 {
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("#### Translating transmit buffer, mode: %u\r\n", translation_mode);
+#endif
     if (translation_mode == 0)
         return transmitBuffer->length();
 
@@ -236,7 +268,7 @@ unsigned short NetworkProtocol::translate_transmit_buffer()
         util_replaceAll(*transmitBuffer, STR_EOL, STR_ASCII_CRLF);
         break;
     case TRANSLATION_MODE_PETSCII:
-        mstr::toASCII(*transmitBuffer);
+        *transmitBuffer = mstr::toUTF8(*transmitBuffer);
         break;
     }
 
@@ -248,11 +280,39 @@ unsigned short NetworkProtocol::translate_transmit_buffer()
  */
 void NetworkProtocol::errno_to_error()
 {
-    switch (errno)
+    int err = compat_getsockerr();
+    switch (err)
     {
+#if defined(_WIN32)
+    case WSAEWOULDBLOCK:
+        error = 1; // This is okay.
+        compat_setsockerr(0); // Short circuit and say it's okay.
+    case WSAEADDRINUSE:
+        error = NETWORK_ERROR_ADDRESS_IN_USE;
+        break;
+    case WSAEINPROGRESS:
+    case WSAEALREADY:
+        error = NETWORK_ERROR_CONNECTION_ALREADY_IN_PROGRESS;
+        break;
+    case WSAECONNRESET:
+        error = NETWORK_ERROR_CONNECTION_RESET;
+        break;
+    case WSAECONNREFUSED:
+        error = NETWORK_ERROR_CONNECTION_REFUSED;
+        break;
+    case WSAENETUNREACH:
+        error = NETWORK_ERROR_NETWORK_UNREACHABLE;
+        break;
+    case WSAETIMEDOUT:
+        error = NETWORK_ERROR_SOCKET_TIMEOUT;
+        break;
+    case WSAENETDOWN:
+        error = NETWORK_ERROR_NETWORK_DOWN;
+        break;
+#else
     case EAGAIN:
         error = 1; // This is okay.
-        errno = 0; // Short circuit and say it's okay.
+        compat_setsockerr(0); // Short circuit and say it's okay.
         break;
     case EADDRINUSE:
         error = NETWORK_ERROR_ADDRESS_IN_USE;
@@ -275,9 +335,17 @@ void NetworkProtocol::errno_to_error()
     case ENETDOWN:
         error = NETWORK_ERROR_NETWORK_DOWN;
         break;
+#endif
     default:
-        Debug_printf("errno_to_error() - Uncaught errno = %u, returning 144.\r\n", errno);
+#ifdef VERBOSE_PROTOCOL
+        Debug_printf("errno_to_error() - Uncaught errno = %u, returning 144.\r\n", err);
+#endif
         error = NETWORK_ERROR_GENERAL;
         break;
     }
+}
+
+off_t NetworkProtocol::seek(off_t offset, int whence)
+{
+    return -1;
 }

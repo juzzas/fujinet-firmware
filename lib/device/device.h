@@ -2,11 +2,12 @@
 #define DEVICE_H
 
 #ifdef BUILD_ATARI
-# include "sio/apetime.h"
+# include "sio/clock.h"
 # include "sio/cassette.h"
 # include "sio/disk.h"
+# include "sio/pclink.h"
 # include "sio/udpstream.h"
-# include "../lib/modem/modem.h"
+# include "sio/modem.h"
 # include "sio/network.h"
 # include "sio/printer.h"
 # include "sio/printerlist.h"
@@ -14,13 +15,14 @@
 # include "sio/voice.h"
 # include "sio/fuji.h"
 
-    sioApeTime apeTime;
+    sioClock clockDevice;
     sioVoice sioV;
     sioUDPStream udpDev;
     // sioCassette sioC; // now part of sioFuji theFuji object
     modem *sioR;
     sioCPM sioZ;
-#endif
+    sioPCLink pcLink;
+#endif // BUILD_ATARI
 
 #ifdef BUILD_COCO
 # include "drivewire/cassette.h"
@@ -30,12 +32,10 @@
 # include "drivewire/network.h"
 # include "drivewire/printer.h"
 # include "drivewire/printerlist.h"
-# include "drivewire/cpm.h"
 # include "drivewire/fuji.h"
 
     drivewireClock dwClock;
     drivewireModem *sioR;
-    drivewireCPM drivewireZ;
 #endif
 
 #ifdef BUILD_RS232
@@ -54,11 +54,14 @@
 #endif
 
 #ifdef BUILD_IEC
+# include "iec/clock.h"
+# include "iec/cpm.h"
+# include "iec/drive.h"
+# include "iec/modem.h"
+# include "iec/network.h"
 # include "iec/printer.h"
 # include "iec/printerlist.h"
 # include "iec/fuji.h"
-# include "iec/modem.h"
-# include "iec/network.h"
 
     iecModem *sioR;
 #endif
@@ -102,13 +105,22 @@
     iwmModem *sioR;
 #endif
 
+#ifdef BUILD_MAC
+#include "mac/floppy.h"
+#include "mac/fuji.h"
+#include "mac/modem.h"
+#include "mac/printer.h"
+#include "mac/printerlist.h"
+    macModem *sioR;
+#endif
+
 #ifdef BUILD_S100
-# include "s100spi/disk.h"
-# include "s100spi/network.h"
-# include "s100spi/modem.h"
-# include "s100spi/printer.h"
-# include "s100spi/printerlist.h"
-# include "s100spi/fuji.h"
+#include "s100spi/disk.h"
+#include "s100spi/network.h"
+#include "s100spi/modem.h"
+#include "s100spi/printer.h"
+#include "s100spi/printerlist.h"
+#include "s100spi/fuji.h"
     s100spiModem *sioR;
 #endif
 

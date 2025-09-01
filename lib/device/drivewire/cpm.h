@@ -2,6 +2,8 @@
 #ifndef DRIVEWIRECPM_H
 #define DRIVEWIRECPM_H
 
+#ifdef ESP_PLATFORM
+
 #include "bus.h"
 
 
@@ -15,14 +17,25 @@ typedef unsigned int    uint32;
 class drivewireCPM : public virtualDevice
 {
 private:
+    std::string response;
 
-    void drivewire_process(uint32_t commanddata, uint8_t checksum);
+#ifdef ESP_PLATFORM
+    TaskHandle_t cpmTaskHandle = NULL;
+#endif /* ESP_PLATFORM */
 
 public:
-    bool cpmActive = false; 
-    void init_cpm(int baud);
-    void drivewire_handle_cpm();
-    
+    drivewireCPM();
+    // virtual ~drivewireCPM();
+    virtual void process();
+    virtual void ready();
+    virtual void send_response();
+    virtual void boot();
+    virtual void read();
+    virtual void write();
+    virtual void status();
 };
+
+extern drivewireCPM theCPM;
+#endif /* ESP_PLATFORM */
 
 #endif /* DRIVEWIRECPM_H */

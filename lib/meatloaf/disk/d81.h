@@ -1,4 +1,5 @@
 // .D81 - This is a byte for byte copy of a physical 1581 disk
+//
 // https://vice-emu.sourceforge.io/vice_17.html#SEC354
 // https://ist.uwaterloo.ca/~schepers/formats/D81.TXT
 //
@@ -7,7 +8,7 @@
 #ifndef MEATLOAF_MEDIA_D81
 #define MEATLOAF_MEDIA_D81
 
-#include "meat_io.h"
+#include "../meatloaf.h"
 #include "d64.h"
 
 
@@ -15,11 +16,11 @@
  * Streams
  ********************************************************/
 
-class D81IStream : public D64IStream {
+class D81MStream : public D64MStream {
     // override everything that requires overriding here
 
 public:
-    D81IStream(std::shared_ptr<MStream> is) : D64IStream(is) 
+    D81MStream(std::shared_ptr<MStream> is) : D64MStream(is) 
     {
         // D81 Partition Info
         std::vector<BlockAllocationMap> b = { 
@@ -53,8 +54,9 @@ public:
         partitions.clear();
         partitions.push_back(p);
         sectorsPerTrack = { 40 };
-        dos_rom = "dos1581";
         has_subdirs = true;
+
+        dos_rom = "dos1581";
 
         uint32_t size = containerStream->size();
         switch (size + media_header_size) 
@@ -65,15 +67,20 @@ public:
             case 822400:  // 80 w/ errors
                 error_info = true;
                 break;
+
+            // https://sourceforge.net/p/vice-emu/bugs/1890/
+            case 829440:  // 81 tracks no errors
+                partitions[partition].block_allocation_map[1].end_track = 81;
+                break;
         }
     };
 
-	virtual uint8_t speedZone( uint8_t track) override { return 0; };
+    virtual uint8_t speedZone(uint8_t track) override { return 0; };
 
 protected:
 
 private:
-    friend class D81File;
+    friend class D81MFile;
 };
 
 
@@ -81,11 +88,22 @@ private:
  * File implementations
  ********************************************************/
 
-class D81File: public D64File {
+class D81MFile: public D64MFile {
 public:
-    D81File(std::string path, bool is_dir = true) : D64File(path, is_dir) {};
+    D81MFile(std::string path, bool is_dir = true) : D64MFile(path, is_dir) 
+    {
+        size = 819200; // Default - 80 tracks no errors
+    };
 
-    MStream* createIStream(std::shared_ptr<MStream> containerIstream) override;
+    MStream* getDecodedStream(std::shared_ptr<MStream> containerIstream) override
+    {
+        //Debug_printv("[%s]", url.c_str());
+
+        return new D81MStream(containerIstream);
+    }
+
+    bool mkDir() override { return false; };
+    bool rmDir() override { return false; };
 };
 
 
@@ -94,18 +112,18 @@ public:
  * FS
  ********************************************************/
 
-class D81FileSystem: public MFileSystem
+class D81MFileSystem: public MFileSystem
 {
 public:
     MFile* getFile(std::string path) override {
-        return new D81File(path);
+        return new D81MFile(path);
     }
 
-    bool handles(std::string fileName) {
+    bool handles(std::string fileName) override {
         return byExtension(".d81", fileName);
     }
 
-    D81FileSystem(): MFileSystem("d81") {};
+    D81MFileSystem(): MFileSystem("d81") {};
 };
 
 

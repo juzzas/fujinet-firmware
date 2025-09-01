@@ -1,15 +1,18 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
-#include <driver/timer.h>
+#ifdef ESP_PLATFORM
+#include <esp_timer.h>
+#endif
 
 #include <string>
+#include <memory>
 #include <vector>
 
 #include "bus.h"
 
 #include "Protocol.h"
-#include "EdUrlParser.h"
+#include "peoples_url_parser.h"
 #include "networkStatus.h"
 #include "status_error_codes.h"
 #include "fnjson.h"
@@ -26,6 +29,8 @@
 #define INPUT_BUFFER_SIZE 65535
 #define OUTPUT_BUFFER_SIZE 65535
 #define SPECIAL_BUFFER_SIZE 256
+
+#define NEWDATA_SIZE 65535
 
 class sioNetwork : public virtualDevice
 {
@@ -44,7 +49,9 @@ public:
     /**
      * The spinlock for the ESP32 hardware timers. Used for interrupt rate limiting.
      */
+#ifdef ESP_PLATFORM
     portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
 
     /**
      * Toggled by the rate limiting timer to indicate that the PROCEED interrupt should
@@ -141,22 +148,22 @@ private:
     /**
      * The Receive buffer for this N: device
      */
-    string *receiveBuffer = nullptr;
+    std::string *receiveBuffer = nullptr;
 
     /**
      * The transmit buffer for this N: device
      */
-    string *transmitBuffer = nullptr;
+    std::string *transmitBuffer = nullptr;
 
     /**
      * The special buffer for this N: device
      */
-    string *specialBuffer = nullptr;
+    std::string *specialBuffer = nullptr;
 
     /**
-     * The EdUrlParser object used to hold/process a URL
+     * The PeoplesUrlParser object used to hold/process a URL
      */
-    EdUrlParser *urlParser = nullptr;
+    std::unique_ptr<PeoplesUrlParser> urlParser = nullptr;
 
     /**
      * Instance of currently open network protocol
@@ -176,53 +183,61 @@ private:
     /**
      * ESP timer handle for the Interrupt rate limiting timer
      */
+#ifdef ESP_PLATFORM
     esp_timer_handle_t rateTimerHandle = nullptr;
+#else
+    uint64_t lastInterruptMs;
+#endif
 
     /**
      * Devicespec passed to us, e.g. N:HTTP://WWW.GOOGLE.COM:80/
      */
-    string deviceSpec;
+    std::string deviceSpec;
 
     /**
      * The currently set Prefix for this N: device, set by SIO call 0x2C
      */
-    string prefix;
+    std::string prefix;
 
     /**
      * The AUX1 value used for OPEN.
      */
-    uint8_t open_aux1;
+    uint8_t open_aux1 = 0;
 
     /**
      * The AUX2 value used for OPEN.
      */
-    uint8_t open_aux2;
+    uint8_t open_aux2 = 0;
 
     /**
      * The Translation mode ORed into AUX2 for READ/WRITE/STATUS operations.
      * 0 = No Translation, 1 = CR<->EOL (Macintosh), 2 = LF<->EOL (UNIX), 3 = CR/LF<->EOL (PC/Windows)
      */
-    uint8_t trans_aux2;
+    uint8_t trans_aux2 = 0;
 
     /**
      * Return value for DSTATS inquiry
      */
-    uint8_t inq_dstats=0xFF;
+    uint8_t inq_dstats = 0xFF;
 
     /**
      * The login to use for a protocol action
      */
-    string login;
+    std::string login;
 
     /**
      * The password to use for a protocol action
      */
-    string password;
+    std::string password;
 
     /**
-     * Timer Rate for interrupt timer
+     * Timer Rate for interrupt timer (ms)
      */
+#ifdef ESP_PLATFORM
     int timerRate = 100;
+#else
+    int timerRate = 20;
+#endif
 
     /**
      * The channel mode for the currently open SIO device. By default, it is PROTOCOL, which passes
@@ -247,12 +262,17 @@ private:
     /**
      * The fnJSON parser wrapper object
      */
-    FNJSON *json;
+    FNJSON *json = nullptr;
 
     /**
      * Bytes sent of current JSON query object.
      */
-    unsigned short json_bytes_remaining=0;
+    unsigned short json_bytes_remaining = 0;
+
+    /**
+     * @brief the write buffer
+     */
+    std::vector<uint8_t> newData;
 
     /**
      * Instantiate protocol object
@@ -364,6 +384,13 @@ private:
      */
     void sio_assert_interrupt();
 
+#ifndef ESP_PLATFORM
+    /**
+     * Called to clear the PROCEED interrupt
+     */
+    void sio_clear_interrupt();
+#endif
+
     /**
      * @brief Perform the inquiry, handle both local and protocol commands.
      * @param inq_cmd the command to check against.
@@ -384,6 +411,12 @@ private:
      * @brief Set JSON query string. (must be in JSON channelMode)
      */
     void sio_set_json_query();
+
+    /**
+     * @brief Set JSON parameters. (must be in JSON channelMode)
+     * Used to affect values on the JSON object
+     */
+    void sio_set_json_parameters();
 
     /**
      * @brief Set timer rate for PROCEED timer in ms

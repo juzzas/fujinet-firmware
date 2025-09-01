@@ -14,7 +14,11 @@ void fnConfig::save()
 {
     int i;
 
+#ifdef ESP_PLATFORM
     Debug_println("fnConfig::save");
+#else
+    Debug_printf("fnConfig::save \"%s\"\r\n", _general.config_file_path.c_str());
+#endif
 
     if (!_dirty)
     {
@@ -33,6 +37,8 @@ void fnConfig::save()
     ss << "hsioindex=" << _general.hsio_index << LINETERM;
     ss << "rotationsounds=" << _general.rotation_sounds << LINETERM;
     ss << "configenabled=" << _general.config_enabled << LINETERM;
+    ss << "config_ng=" << _general.config_ng << LINETERM;
+    ss << "altconfigfile=" << _general.config_filename << LINETERM;
     ss << "boot_mode=" << _general.boot_mode << LINETERM;
     if (_general.timezone.empty() == false)
         ss << "timezone=" << _general.timezone << LINETERM;
@@ -143,6 +149,7 @@ void fnConfig::save()
 
     // CPM
     ss << LINETERM << "[CPM]" << LINETERM;
+    ss << "cpm_enabled=" << _cpm.cpm_enabled << LINETERM;
     ss << "ccp=" << _cpm.ccp << LINETERM;
 
     // ENABLE DEVICE SLOTS
@@ -156,7 +163,52 @@ void fnConfig::save()
     ss << "enable_device_slot_7=" << _denable.device_7_enabled << LINETERM;
     ss << "enable_device_slot_8=" << _denable.device_8_enabled << LINETERM;
     ss << "enable_apetime=" << _denable.apetime << LINETERM;
+    ss << "enable_pclink=" << _denable.pclink << LINETERM;
 
+    // Bus Over IP
+    ss << LINETERM << "[BOIP]" << LINETERM;
+    ss << "enabled=" << _boip.boip_enabled << LINETERM;
+    ss << "host=" << _boip.host << LINETERM;
+    if (_boip.port != CONFIG_DEFAULT_BOIP_PORT)
+    {
+        ss << "port=" << _boip.port << LINETERM;
+    }
+    else
+    {
+        ss << "port=" << LINETERM;
+    }
+
+#ifdef BUILD_RS232
+    ss << LINETERM << "[RS232]" << LINETERM;
+    ss << "baud=" << _rs232.baud << LINETERM;
+#endif
+
+#ifndef ESP_PLATFORM
+    // SERIAL
+    ss << LINETERM << "[Serial]" << LINETERM;
+    ss << "port=" << _serial.port << LINETERM;
+#ifdef BUILD_COCO
+    ss << "baud=" << _serial.baud << LINETERM;
+#endif
+#ifdef BUILD_ATARI
+    ss << "command=" << std::string(_serial_command_pin_names[_serial.command]) << LINETERM;
+    ss << "proceed=" << std::string(_serial_proceed_pin_names[_serial.proceed]) << LINETERM;
+#endif
+
+#ifdef BUILD_APPLE
+    // Bus Over Serial - not used, yet
+    ss << LINETERM << "[BOS]" << LINETERM;
+    ss << "enabled=" << _bos.bos_enabled << LINETERM;
+    ss << "port_name=" << _bos.port_name.c_str() << LINETERM;
+    ss << "baud=" << _bos.baud << LINETERM;
+    ss << "bits=" << _bos.bits << LINETERM;
+    ss << "parity=" << _bos.parity << LINETERM;
+    ss << "stop_bits=" << _bos.stop_bits << LINETERM;
+    ss << "flowcontrol=" << _bos.flowcontrol << LINETERM;
+#endif
+#endif
+
+#ifdef ESP_PLATFORM
     // Write the results out
     FILE *fout = NULL;
     if (fnConfig::get_general_fnconfig_spifs() == true) //only if spiffs is enabled
@@ -177,14 +229,25 @@ void fnConfig::save()
             return;
         }
     }
-        std::string result = ss.str();
-        size_t z = fwrite(result.c_str(), 1, result.length(), fout);
-        (void)z; // Get around unused var
-        Debug_printf("fnConfig::save wrote %d bytes\r\n", z);
-        fclose(fout);
+#else
+// !ESP_PLATFORM
+    // Write the results out
+    FILE *fout = fopen(_general.config_file_path.c_str(), FILE_WRITE);
+    if (fout == nullptr)
+    {
+        Debug_printf("Failed to open config file\r\n");
+        return;
+    }
+#endif
+    std::string result = ss.str();
+    size_t z = fwrite(result.c_str(), 1, result.length(), fout);
+    (void)z; // Get around unused var
+    Debug_printf("fnConfig::save wrote %u bytes\r\n", (unsigned)z);
+    fclose(fout);
     
     _dirty = false;
 
+#ifdef ESP_PLATFORM
     // Copy to SD if possible, only when wrote FLASH first 
     if (fnSDFAT.running() && fnConfig::get_general_fnconfig_spifs() == true)
     {
@@ -195,4 +258,5 @@ void fnConfig::save()
             return;
         }
     }
+#endif
 }

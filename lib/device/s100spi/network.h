@@ -2,12 +2,12 @@
 #define NETWORK_H
 
 #include <esp_timer.h>
-
+#include <memory>
 #include <string>
 
 #include "bus.h"
 
-#include "EdUrlParser.h"
+#include "peoples_url_parser.h"
 
 #include "Protocol.h"
 
@@ -157,9 +157,9 @@ private:
     std::string *specialBuffer = nullptr;
 
     /**
-     * The EdUrlParser object used to hold/process a URL
+     * The PeoplesUrlParser object used to hold/process a URL
      */
-    EdUrlParser *urlParser = nullptr;
+    std::unique_ptr<PeoplesUrlParser> urlParser = nullptr;
 
     /**
      * Instance of currently open network protocol
@@ -190,7 +190,7 @@ private:
     /**
      * Error number, if status.bits.client_error is set.
      */
-    uint8_t err; 
+    uint8_t err = 0; 
 
     /**
      * ESP timer handle for the Interrupt rate limiting timer
@@ -210,18 +210,18 @@ private:
     /**
      * The AUX1 value used for OPEN.
      */
-    uint8_t open_aux1;
+    uint8_t open_aux1 = 0;
 
     /**
      * The AUX2 value used for OPEN.
      */
-    uint8_t open_aux2;
+    uint8_t open_aux2 = 0;
 
     /**
      * The Translation mode ORed into AUX2 for READ/WRITE/STATUS operations.
      * 0 = No Translation, 1 = CR<->EOL (Macintosh), 2 = LF<->EOL (UNIX), 3 = CR/LF<->EOL (PC/Windows)
      */
-    uint8_t trans_aux2;
+    uint8_t trans_aux2 = 0;
 
     /**
      * Return value for DSTATS inquiry
@@ -281,7 +281,7 @@ private:
     /**
      * Create the deviceSpec and fix it for parsing
      */
-    void create_devicespec(string d);
+    void create_devicespec(std::string d);
 
     /**
      * Create a urlParser from deviceSpec

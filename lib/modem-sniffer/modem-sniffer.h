@@ -14,7 +14,7 @@
 #include "fnFS.h"
 
 
-using namespace std;
+// using namespace std;
 
 #define SNIFFER_OUTPUT_FILE "/rs232dump"
 
@@ -68,6 +68,11 @@ public:
      * Get enable flag
      */
     bool getEnable() { return enable; }
+
+    /**
+     * @brief set active filesystem, for deferred use.
+     */
+    void setActiveFS(FileSystem *_fs) { activeFS = _fs; }
 
 private:
     /**

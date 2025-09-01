@@ -1,7 +1,11 @@
 #ifndef _TNFSLIB_MOUNTINFO_H
 #define _TNFSLIB_MOUNTINFO_H
 
-#include <lwip/netdb.h>
+#include <cstdint>
+#include <mutex>
+
+#include "fnDNS.h"
+#include "fnTcpClient.h"
 
 
 #define TNFS_DEFAULT_PORT 16384
@@ -18,6 +22,22 @@
 #define TNFS_INVALID_SESSION 0 // We're assuming a '0' is never a valid session ID
 
 #define TNFS_MAX_DIRCACHE_ENTRIES 32 // Max number of directory cache entries we'll store
+
+#define TNFS_PROTOCOL_UNKNOWN 0
+#define TNFS_PROTOCOL_TCP 1
+#define TNFS_PROTOCOL_UDP 2
+
+#ifdef TNFS_UDP_SIMULATE_POOR_CONNECTION
+#define TNFS_UDP_SIMULATE_SEND_LOSS
+#define TNFS_UDP_SIMULATE_RECV_LOSS
+#define TNFS_UDP_SIMULATE_SEND_TWICE
+#define TNFS_UDP_SIMULATE_RECV_TWICE
+#endif // TNFS_UDP_SIMULATE_POOR_CONNECTION
+
+#define TNFS_UDP_SIMULATE_SEND_LOSS_PROB 0.1
+#define TNFS_UDP_SIMULATE_RECV_LOSS_PROB 0.1
+#define TNFS_UDP_SIMULATE_SEND_TWICE_PROB 0.05
+#define TNFS_UDP_SIMULATE_RECV_TWICE_PROB 0.05
 
 // Some things we need to keep track of for every file we open
 struct tnfsFileHandleInfo
@@ -78,6 +98,9 @@ public:
     void set_dircache_eof() { _dir_cache_eof = true; };
     bool get_dircache_eof() { return _dir_cache_eof; };
 
+    uint8_t protocol = TNFS_PROTOCOL_UNKNOWN;
+    fnTcpClient tcp_client;
+
     // These char[] sizes are abitrary...
     char hostname[64] = { '\0' };
     in_addr_t host_ip = IPADDR_NONE;
@@ -95,6 +118,12 @@ public:
 
     int16_t dir_handle = TNFS_INVALID_HANDLE; // Stored from server's response to TNFS_OPENDIR
     uint16_t dir_entries = 0; // Stored from server's response to TNFS_OPENDIRX
+    std::recursive_mutex transaction_mutex;
+
+#ifdef TNFS_UDP_SIMULATE_RECV_TWICE
+    uint8_t last_packet[532];
+    int last_packet_len = -1;
+#endif
 };
 
 #endif // _TNFSLIB_MOUNTINFO_H

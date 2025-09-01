@@ -2,7 +2,7 @@
 #define _FN_FSSPIFFS_
 #ifdef FLASH_SPIFFS
 
-#include <dirent.h>
+#include "compat_dirent.h"
 
 #include "fnFS.h"
 
@@ -10,7 +10,7 @@
 class FileSystemSPIFFS : public FileSystem
 {
 private:
-    DIR * _dir;
+    DIR * _dir = nullptr;
 public:
     FileSystemSPIFFS();
     bool start();
@@ -21,6 +21,9 @@ public:
     virtual bool is_global() override { return true; };    
 
     FILE * file_open(const char* path, const char* mode = FILE_READ) override;
+#ifndef FNIO_IS_STDIO
+    FileHandler * filehandler_open(const char* path, const char* mode = FILE_READ) override;
+#endif
 
     bool exists(const char* path) override;
 

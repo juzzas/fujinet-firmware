@@ -14,19 +14,22 @@
 //     uint32_t bit_count;
 // };
 
+extern uint16_t decode_6_and_2(uint8_t *dest, const uint8_t *src);
 
 class MediaTypeDSK  : public MediaTypeWOZ
 {
 private:
+    size_t num_tracks = 0;
+
     void dsk2woz_info();
     void dsk2woz_tmap();
     bool dsk2woz_tracks(uint8_t *dsk); 
 
 public:
 
-    virtual mediatype_t mount(FILE *f, uint32_t disksize) override;
-    mediatype_t mount(FILE *f) {return mount(f, 0);};
+    virtual mediatype_t mount(fnFile *f, uint32_t disksize) override;
     // virtual void unmount() override;
+    virtual bool write_sector(int track, int sector, uint8_t *buffer) override;
 
     // static bool create(FILE *f, uint32_t numBlock);
 };

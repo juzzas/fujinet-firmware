@@ -107,6 +107,7 @@ rs232Modem::~rs232Modem()
     if (modemSniffer != nullptr)
     {
         delete modemSniffer;
+        modemSniffer = nullptr;
     }
 
     if (telnet != nullptr)
@@ -160,8 +161,8 @@ void rs232Modem::rs232_poll_3(uint8_t device, uint8_t aux1, uint8_t aux2)
     if (respond == false)
         return;
 
-    // Get size of handler
-    int filesize = fnSystem.load_firmware(FIRMWARE_850HANDLER, NULL);
+    // HACK TO GET IT TO COMPILE, TODO: FIX RS232
+    int filesize = 100;
 
     // Simply return (without ACK) if we failed to get this
     if (filesize < 0)
@@ -241,24 +242,32 @@ void rs232Modem::rs232_poll_1()
 // 0x26 / '&' - HANDLER DOWNLOAD
 void rs232Modem::rs232_send_firmware(uint8_t loadcommand)
 {
+#ifdef FIRMWARE_VARIABLE_IS_USED
     const char *firmware;
+#endif
     if (loadcommand == RS232_MODEMCMD_LOAD_RELOCATOR)
     {
+#ifdef FIRMWARE_VARIABLE_IS_USED
         firmware = FIRMWARE_850RELOCATOR;
+#endif
     }
     else
     {
         if (loadcommand == RS232_MODEMCMD_LOAD_HANDLER)
         {
+#ifdef FIRMWARE_VARIABLE_IS_USED
             firmware = FIRMWARE_850HANDLER;
+#endif
         }
         else
             return;
     }
 
     // Load firmware from file
-    uint8_t *code;
-    int codesize = fnSystem.load_firmware(firmware, &code);
+    // HACK TO GET RS232 TO COMPILE, TODO: FIX RS232
+    uint8_t *code = NULL;
+    int codesize = 100;
+
     // NAK if we failed to get this
     if (codesize < 0 || code == NULL)
     {
@@ -608,7 +617,7 @@ void rs232Modem::rs232_baudlock()
 {
     rs232_ack();
     baudLock = (cmdFrame.aux1 > 0 ? true : false);
-    modemBaud = rs232_get_aux();
+    modemBaud = rs232_get_aux16_lo();
 
     Debug_printf("baudLock: %d\n", baudLock);
 
@@ -1654,7 +1663,7 @@ void rs232Modem::rs232_handle_modem()
         }
 
         int rs232BytesAvail = fnUartBUS.available();
-        //int rs232BytesAvail = min(0, fnUartBUS.available());
+        //int rs232BytesAvail = std::min(0, fnUartBUS.available());
 
         // send from Atari to Fujinet
         if (rs232BytesAvail && tcpClient.connected())
@@ -1794,17 +1803,17 @@ void rs232Modem::shutdown()
 /*
   Process command
 */
-void rs232Modem::rs232_process(uint32_t commanddata, uint8_t checksum)
+void rs232Modem::rs232_process(cmdFrame_t *cmd_ptr)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
-
     if (!Config.get_modem_enabled())
+    {
         Debug_println("rs232Modem::disabled, ignoring");
+    }
     else
     {
         Debug_println("rs232Modem::rs232_process() called");
 
+        cmdFrame = *cmd_ptr;
         switch (cmdFrame.comnd)
         {
         case RS232_MODEMCMD_LOAD_RELOCATOR:

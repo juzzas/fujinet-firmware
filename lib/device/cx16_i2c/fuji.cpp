@@ -18,6 +18,7 @@
 
 #include "led.h"
 #include "utils.h"
+#include "string_utils.h"
 
 cx16Fuji theFuji; // global fuji device object
 
@@ -177,6 +178,10 @@ void cx16Fuji::net_set_ssid()
     {
         bool save = cmdFrame.aux1 != 0;
 
+        // URL Decode SSID/PASSWORD to handle special chars (FIXME)
+        //mstr::urlDecode(cfg.ssid, sizeof(cfg.ssid));
+        //mstr::urlDecode(cfg.password, sizeof(cfg.password));
+
         Debug_printf("Connecting to net: %s password: %s\n", cfg.ssid, cfg.password);
 
         fnWiFi.connect(cfg.ssid, cfg.password);
@@ -256,13 +261,13 @@ void cx16Fuji::disk_image_mount()
         cx16_error();
         return;
     }
-    
+
     if (!_validate_host_slot(_fnDisks[deviceSlot].host_slot))
     {
         cx16_error();
         return;
     }
-    
+
     // A couple of reference variables to make things much easier to read...
     fujiDisk &disk = _fnDisks[deviceSlot];
     fujiHost &host = _fnHosts[disk.host_slot];
@@ -329,6 +334,7 @@ void cx16Fuji::copy_file()
     if (ck != cx16_checksum(csBuf, sizeof(csBuf)))
     {
         cx16_error();
+        free(dataBuf);
         return;
     }
 
@@ -340,18 +346,21 @@ void cx16Fuji::copy_file()
     if (copySpec.empty() || copySpec.find_first_of("|") == string::npos)
     {
         cx16_error();
+        free(dataBuf);
         return;
     }
 
     if (cmdFrame.aux1 < 1 || cmdFrame.aux1 > 8)
     {
         cx16_error();
+        free(dataBuf);
         return;
     }
 
     if (cmdFrame.aux2 < 1 || cmdFrame.aux2 > 8)
     {
         cx16_error();
+        free(dataBuf);
         return;
     }
 
@@ -382,6 +391,7 @@ void cx16Fuji::copy_file()
     if (sourceFile == nullptr)
     {
         cx16_error();
+        free(dataBuf);
         return;
     }
 
@@ -390,6 +400,8 @@ void cx16Fuji::copy_file()
     if (destFile == nullptr)
     {
         cx16_error();
+        free(dataBuf);
+        fclose(sourceFile);
         return;
     }
 
@@ -422,7 +434,7 @@ void cx16Fuji::mount_all()
         if (disk.access_mode == DISK_ACCESS_MODE_WRITE)
             flag[1] = '+';
 
-        if (disk.host_slot != 0xFF)
+        if (disk.host_slot != INVALID_HOST_SLOT && strlen(disk.filename) > 0)
         {
             nodisks = false; // We have a disk in a slot
 
@@ -758,7 +770,7 @@ void cx16Fuji::open_directory()
     // If we already have a directory open, close it first
     if (_current_open_directory_slot != -1)
     {
-        Debug_print("Directory was already open - closign it first\n");
+        Debug_print("Directory was already open - closing it first\n");
         _fnHosts[_current_open_directory_slot].dir_close();
         _current_open_directory_slot = -1;
     }
@@ -1114,6 +1126,14 @@ void cx16Fuji::get_host_prefix()
     bus_to_computer((uint8_t *)prefix, sizeof(prefix), false);
 }
 
+// Public method to update host in specific slot
+fujiHost *cx16Fuji::set_slot_hostname(int host_slot, char *hostname)
+{
+    _fnHosts[host_slot].set_hostname(hostname);
+    _populate_config_from_slots();
+    return &_fnHosts[host_slot];
+}
+
 // Send device slot data to computer
 void cx16Fuji::read_device_slots()
 {
@@ -1298,8 +1318,9 @@ void cx16Fuji::set_device_filename()
     // Handle DISK slots
     if (slot < MAX_DISK_DEVICES)
     {
-        // TODO: Set HOST and MODE
         memcpy(_fnDisks[cmdFrame.aux1].filename, tmp, MAX_FILENAME_LEN);
+        _fnDisks[cmdFrame.aux1].host_slot = host;
+        _fnDisks[cmdFrame.aux1].access_mode = mode;
         _populate_config_from_slots();
     }
     // Handle TAPE slots
@@ -1366,9 +1387,9 @@ void cx16Fuji::setup(systemBus *siobus)
 
     // Disable booting from CONFIG if our settings say to turn it off
     boot_config = Config.get_general_config_enabled();
-    
+
     //Disable status_wait if our settings say to turn it off
-    status_wait_enabled = Config.get_general_status_wait_enabled();    
+    status_wait_enabled = Config.get_general_status_wait_enabled();
 }
 
 void cx16Fuji::process(uint32_t commanddata, uint8_t checksum)

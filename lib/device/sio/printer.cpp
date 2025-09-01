@@ -38,6 +38,7 @@ constexpr const char * const sioPrinter::printer_model_str[PRINTER_INVALID];
 sioPrinter::~sioPrinter()
 {
     delete _pptr;
+    _pptr = nullptr;
 }
 
 // write for W commands
@@ -160,7 +161,10 @@ void sioPrinter::sio_status()
 void sioPrinter::set_printer_type(sioPrinter::printer_type printer_type)
 {
     // Destroy any current printer emu object
-    delete _pptr;
+    if (_pptr != nullptr)
+    {
+        delete _pptr;
+    }
 
     _ptype = printer_type;
     switch (printer_type)
@@ -279,7 +283,9 @@ void sioPrinter::sio_process(uint32_t commanddata, uint8_t checksum)
     cmdFrame.checksum = checksum;
 
     if (!Config.get_printer_enabled())
+    {
         Debug_println("sioPrinter::disabled, ignoring");
+    }
     else
     {
         switch (cmdFrame.comnd)
@@ -289,7 +295,7 @@ void sioPrinter::sio_process(uint32_t commanddata, uint8_t checksum)
             _lastaux1 = cmdFrame.aux1;
             _lastaux2 = cmdFrame.aux2;
             _last_ms = fnSystem.millis();
-            sio_ack();
+            sio_late_ack();
             sio_write(_lastaux1, _lastaux2);
             break;
         case SIO_PRINTERCMD_STATUS:

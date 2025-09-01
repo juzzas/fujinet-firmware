@@ -14,6 +14,7 @@
 #include "fsFlash.h"
 
 #include "utils.h"
+#include "string_utils.h"
 
 #define ADDITIONAL_DETAILS_BYTES 12
 
@@ -202,6 +203,10 @@ void lynxFuji::comlynx_net_set_ssid(uint16_t s)
         comlynx_recv(); // CK
 
         bool save = true;
+
+        // URL Decode SSID/PASSWORD to handle special chars (FIXME)
+        //mstr::urlDecode(cfg.ssid, sizeof(cfg.ssid));
+        //mstr::urlDecode(cfg.password, sizeof(cfg.password));
 
         Debug_printf("Connecting to net: %s password: %s\n", cfg.ssid, cfg.password);
 
@@ -401,7 +406,7 @@ void lynxFuji::mount_all()
 {
     bool nodisks = true; // Check at the end if no disks are in a slot and disable config
 
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < MAX_DISK_DEVICES; i++)
     {
         fujiDisk &disk = _fnDisks[i];
         fujiHost &host = _fnHosts[disk.host_slot];
@@ -410,7 +415,7 @@ void lynxFuji::mount_all()
         if (disk.access_mode == DISK_ACCESS_MODE_WRITE)
             flag[1] = '+';
 
-        if (disk.host_slot != 0xFF)
+        if (disk.host_slot != INVALID_HOST_SLOT && strlen(disk.filename) > 0)
         {
             nodisks = false; // We have a disk in a slot
 
@@ -531,7 +536,7 @@ void lynxFuji::comlynx_read_app_key()
         response_len = 1; // if no file found set return length to 1 or lynx hangs waiting for response
         return;
     }
-    
+
     response_len = fread(response, sizeof(char), 64, fp);
     fclose(fp);
 
@@ -943,6 +948,14 @@ void lynxFuji::comlynx_get_host_prefix()
 {
 }
 
+// Public method to update host in specific slot
+fujiHost *lynxFuji::set_slot_hostname(int host_slot, char *hostname)
+{
+    _fnHosts[host_slot].set_hostname(hostname);
+    _populate_config_from_slots();
+    return &_fnHosts[host_slot];
+}
+
 // Send device slot data to computer
 void lynxFuji::comlynx_read_device_slots()
 {
@@ -1188,7 +1201,7 @@ void lynxFuji::comlynx_disable_device()
     }
 
     Config.save();
-    
+
     ComLynx.disableDevice(d);
 
     comlynx_response_ack();
@@ -1221,7 +1234,7 @@ void lynxFuji::comlynx_random_number()
 
     response_len = sizeof(int);
     *p = rand();
-    
+
     comlynx_response_ack();
 }
 
@@ -1455,7 +1468,7 @@ void lynxFuji::comlynx_process(uint8_t b)
 {
     unsigned char c = b >> 4;
     Debug_printf("%02x \n",c);
-    
+
     switch (c)
     {
     case MN_STATUS:

@@ -57,12 +57,17 @@ lynxNetwork::~lynxNetwork()
     transmitBuffer->clear();
     specialBuffer->clear();
 
-    if (receiveBuffer != nullptr)
-        delete receiveBuffer;
-    if (transmitBuffer != nullptr)
-        delete transmitBuffer;
-    if (specialBuffer != nullptr)
-        delete specialBuffer;
+    delete receiveBuffer;
+    delete transmitBuffer;
+    delete specialBuffer;
+    receiveBuffer = nullptr;
+    transmitBuffer = nullptr;
+    specialBuffer = nullptr;
+
+    if (protocol != nullptr)
+        delete protocol;
+
+    protocol = nullptr;
 }
 
 /** LYNX COMMANDS ***************************************************************/
@@ -126,7 +131,7 @@ void lynxNetwork::open(unsigned short s)
     }
 
     // Attempt protocol open
-    if (protocol->open(urlParser, &cmdFrame) == true)
+    if (protocol->open(urlParser.get(), &cmdFrame) == true)
     {
         statusByte.bits.client_error = true;
         Debug_printf("Protocol unable to make connection. Error: %d\n", err);
@@ -258,7 +263,13 @@ void lynxNetwork::status()
     switch (channelMode)
     {
     case PROTOCOL:
-        err = protocol->status(&s);
+        if (protocol == nullptr) {
+            Debug_printf("ERROR: Calling status on a null protocol.\r\n");
+            err = true;
+            s.error = true;
+        } else {
+            err = protocol->status(&s);
+        }
         break;
     case JSON:
         // err = json.status(&status);
@@ -310,7 +321,7 @@ void lynxNetwork::set_prefix(unsigned short s)
 
     if (prefixSpec_str == "..") // Devance path N:..
     {
-        vector<int> pathLocations;
+        std::vector<int> pathLocations;
         for (int i = 0; i < prefix.size(); i++)
         {
             if (prefix[i] == '/')
@@ -403,7 +414,7 @@ void lynxNetwork::del(uint16_t s)
 
     cmdFrame.comnd = '!';
 
-    if (protocol->perform_idempotent_80(urlParser, &cmdFrame))
+    if (protocol->perform_idempotent_80(urlParser.get(), &cmdFrame))
     {
         statusByte.bits.client_error = true;
         return;
@@ -426,7 +437,7 @@ void lynxNetwork::rename(uint16_t s)
 
     cmdFrame.comnd = ' ';
 
-    if (protocol->perform_idempotent_80(urlParser, &cmdFrame))
+    if (protocol->perform_idempotent_80(urlParser.get(), &cmdFrame))
     {
         statusByte.bits.client_error = true;
         return;
@@ -449,7 +460,7 @@ void lynxNetwork::mkdir(uint16_t s)
 
     cmdFrame.comnd = '*';
 
-    if (protocol->perform_idempotent_80(urlParser, &cmdFrame))
+    if (protocol->perform_idempotent_80(urlParser.get(), &cmdFrame))
     {
         statusByte.bits.client_error = true;
         return;
@@ -918,13 +929,13 @@ void lynxNetwork::create_devicespec(string d)
 }
 
 /*
- * The resulting URL is then sent into EdURLParser to get our URLParser object which is used in the rest
+ * The resulting URL is then sent into a URL Parser to get our URLParser object which is used in the rest
  * of Network.
 */
 void lynxNetwork::create_url_parser()
 {
     std::string url = deviceSpec.substr(deviceSpec.find(":") + 1);
-    urlParser = EdUrlParser::parseUrl(url);
+    urlParser = PeoplesUrlParser::parseURL(url);
 }
 
 void lynxNetwork::parse_and_instantiate_protocol(string d)
@@ -935,19 +946,19 @@ void lynxNetwork::parse_and_instantiate_protocol(string d)
     // Invalid URL returns error 165 in status.
     if (!urlParser->isValidUrl())
     {
-        Debug_printf("Invalid devicespec: %s\n", deviceSpec.c_str());
+        Debug_printf("Invalid devicespec: >%s<\n", deviceSpec.c_str());
         statusByte.byte = 0x00;
         statusByte.bits.client_error = true;
         err = NETWORK_ERROR_INVALID_DEVICESPEC;
         return;
     }
-
-    Debug_printf("::parse_and_instantiate_protocol transformed to (%s, %s)\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
-
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("::parse_and_instantiate_protocol -> spec: >%s<, url: >%s<\r\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
+#endif
     // Instantiate protocol object.
     if (!instantiate_protocol())
     {
-        Debug_printf("Could not open protocol.\n");
+        Debug_printf("Could not open protocol. spec: >%s<, url: >%s<\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
         statusByte.byte = 0x00;
         statusByte.bits.client_error = true;
         err = NETWORK_ERROR_GENERAL;

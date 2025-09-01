@@ -15,7 +15,9 @@ class iwmCPM : public iwmDevice
 {
 private:
 
-    TaskHandle_t cpmTaskHandle = NULL;    
+#ifdef ESP_PLATFORM // OS
+    TaskHandle_t cpmTaskHandle = NULL;
+#endif
 
     void boot();
 
@@ -36,11 +38,11 @@ public:
     void send_extended_status_reply_packet() override{};
     void send_status_dib_reply_packet() override;
     void send_extended_status_dib_reply_packet() override{};
-    bool cpmActive = false; 
+    bool cpmActive = false;
     void init_cpm(int baud);
     virtual void sio_status();
     void sio_handle_cpm();
-    
+
 };
 
 #endif /* IWMCPM_H */

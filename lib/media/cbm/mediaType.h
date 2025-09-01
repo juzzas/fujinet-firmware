@@ -2,6 +2,7 @@
 #define _MEDIA_TYPE_
 
 #include <stdio.h>
+#include <cstdint>
 
 
 #define INVALID_SECTOR_VALUE 0xFFFFFFFF
@@ -60,7 +61,7 @@ public:
     virtual void unmount();
 
     // Returns TRUE if an error condition occurred
-    virtual bool format(uint16_t *respopnsesize);
+    virtual bool format(uint16_t *responsesize);
 
     // Returns TRUE if an error condition occurred
     virtual bool read(uint32_t blockNum, uint16_t *readcount) = 0;

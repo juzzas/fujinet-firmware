@@ -5,7 +5,9 @@
 #ifndef NETWORKPROTOCOL_SSH
 #define NETWORKPROTOCOL_SSH
 
+#ifdef ESP_PLATFORM
 #include <lwip/sockets.h>
+#endif
 
 #include <string>
 
@@ -13,9 +15,12 @@
 
 #include "fnTcpClient.h"
 #include "libssh/libssh.h"
+#ifdef ESP_PLATFORM
+// apc: this is libssh private header!
 #include "libssh/session.h"
+#endif
 
-using namespace std;
+// using namespace std;
 
 class NetworkProtocolSSH : public NetworkProtocol
 {
@@ -24,7 +29,7 @@ public:
     /**
      * ctor
      */
-    NetworkProtocolSSH(string *rx_buf, string *tx_buf, string *sp_buf);
+    NetworkProtocolSSH(std::string *rx_buf, std::string *tx_buf, std::string *sp_buf);
 
     /**
      * dtor
@@ -36,7 +41,7 @@ public:
      * @param urlParser The URL object passed in to open.
      * @param cmdFrame The command frame to extract aux1/aux2/etc.
      */
-    virtual bool open(EdUrlParser *urlParser, cmdFrame_t *cmdFrame);
+    virtual bool open(PeoplesUrlParser *urlParser, cmdFrame_t *cmdFrame);
 
     /**
      * @brief Close connection to the protocol.
@@ -112,17 +117,17 @@ private:
     /**
      * Host Key Fingerprint
      */
-    unsigned char *fingerprint;
+    unsigned char *fingerprint = nullptr;
 
     /**
      * User Auth list
      */
-    const char *userauthlist;
+    const char *userauthlist = nullptr;
 
     /**
      * Intermediate RX buffer
      */
-    char *rxbuf;
+    char *rxbuf = nullptr;
 
     /**
      * Return if bytes available by injecting into RX buffer.

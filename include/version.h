@@ -7,12 +7,16 @@
  as needed.
 */
 
-#define FN_VERSION_MAJOR 0
+#ifndef _VERSION_H
+#define _VERSION_H
+
+#define FN_VERSION_MAJOR 1
 #define FN_VERSION_MINOR 5
 
-#define FN_VERSION_BUILD "fb095614"
+#define FN_VERSION_BUILD "036ff4922f64fe9f1a3e1e6920e487d3f159afbd"
 
-#define FN_VERSION_DATE "2023-07-08 14:06:00"
+#define FN_VERSION_DATE "2025-04-02 10:07:01"
 
-#define FN_VERSION_FULL "v1.0"
+#define FN_VERSION_FULL "v1.5.0"
 
+#endif /* _VERSION_H */

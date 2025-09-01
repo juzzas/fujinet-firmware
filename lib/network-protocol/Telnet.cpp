@@ -6,11 +6,17 @@
 
 #include "Telnet.h"
 
+#include <stdlib.h>
+#include <errno.h>
+#include <string.h>
+#include "compat_inet.h"
+
 #include "../../include/debug.h"
 
 #include "libtelnet.h"
 #include "status_error_codes.h"
 
+#include <vector>
 
 
 static const telnet_telopt_t telopts[] = {
@@ -26,18 +32,18 @@ static void _event_handler(telnet_t *telnet, telnet_event_t *ev, void *user_data
 {
     NetworkProtocolTELNET *protocol = (NetworkProtocolTELNET *)user_data;
 
-    string *receiveBuffer = protocol->getReceiveBuffer();
-
     if (protocol == nullptr)
     {
         Debug_printf("_event_handler() - NULL TELNET Protocol handler!\r\n");
         return;
     }
 
+    std::string *receiveBuffer = protocol->getReceiveBuffer();
+
     switch (ev->type)
     {
     case TELNET_EV_DATA: // Received Data
-        *receiveBuffer += string(ev->data.buffer, ev->data.size);
+        *receiveBuffer += std::string(ev->data.buffer, ev->data.size);
         protocol->newRxLen = receiveBuffer->size();
         break;
     case TELNET_EV_SEND:
@@ -67,7 +73,7 @@ static void _event_handler(telnet_t *telnet, telnet_event_t *ev, void *user_data
 /**
  * ctor
  */
-NetworkProtocolTELNET::NetworkProtocolTELNET(string *rx_buf, string *tx_buf, string *sp_buf)
+NetworkProtocolTELNET::NetworkProtocolTELNET(std::string *rx_buf, std::string *tx_buf, std::string *sp_buf)
     : NetworkProtocolTCP(rx_buf, tx_buf, sp_buf)
 {
     Debug_printf("NetworkProtocolTELNET::ctor\r\n");
@@ -98,15 +104,9 @@ NetworkProtocolTELNET::~NetworkProtocolTELNET()
  */
 bool NetworkProtocolTELNET::read(unsigned short len)
 {
-    char *newData = (char *)malloc(len);
+    std::vector<uint8_t> newData = std::vector<uint8_t>(len);
 
     Debug_printf("NetworkProtocolTELNET::read(%u)\r\n", len);
-
-    if (newData == nullptr)
-    {
-        Debug_printf("Could not allocate %u bytes! Aborting!\r\n");
-        return true; // error.
-    }
 
     if (receiveBuffer->length() == 0)
     {
@@ -118,9 +118,9 @@ bool NetworkProtocolTELNET::read(unsigned short len)
         }
 
         // Do the read from client socket.
-        client.read((uint8_t *)newData, len);
+        client.read(newData.data(), len);
 
-        telnet_recv(telnet, newData, len);
+        telnet_recv(telnet, (char *)newData.data(), len);
 
         // bail if the connection is reset.
         if (errno == ECONNRESET)
@@ -128,13 +128,12 @@ bool NetworkProtocolTELNET::read(unsigned short len)
             error = NETWORK_ERROR_CONNECTION_RESET;
             return true;
         }
-
-        free(newData);
     }
+
     // Return success
     error = 1;
 
-    Debug_printf("NetworkProtocolTelnet::read(%d) - %s\r\n", newRxLen, receiveBuffer->c_str());
+    Debug_printf("NetworkProtocolTELNET::read(%d) - %s\r\n", newRxLen, receiveBuffer->c_str());
 
     return NetworkProtocol::read(newRxLen); // Set by calls into telnet_recv()
 }

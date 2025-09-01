@@ -15,16 +15,16 @@
 #define MAX_DISPLAY_FILENAME_LEN 36
 #define MAX_FILENAME_LEN 256
 
-#define DISK_ACCESS_MODE_READ 1
-#define DISK_ACCESS_MODE_WRITE 2
-#define DISK_ACCESS_MODE_FETCH 128
+#define DISK_ACCESS_MODE_READ    0x01
+#define DISK_ACCESS_MODE_WRITE   0x02
+#define DISK_ACCESS_MODE_MOUNTED 0x40
 
 #define INVALID_HOST_SLOT 0xFF
 
 class fujiDisk
 {
 public:    
-    FILE* fileh = nullptr;
+    fnFile* fileh = nullptr;
     uint8_t access_mode = DISK_ACCESS_MODE_READ;
     mediatype_t disk_type = MEDIATYPE_UNKNOWN;
     uint32_t disk_size = 0;

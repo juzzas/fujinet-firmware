@@ -14,6 +14,7 @@
 #include "fsFlash.h"
 
 #include "utils.h"
+#include "string_utils.h"
 
 #define ADDITIONAL_DETAILS_BYTES 12
 
@@ -204,6 +205,10 @@ void adamFuji::adamnet_net_set_ssid(uint16_t s)
         adamnet_response_ack();
 
         bool save = true;
+
+        // URL Decode SSID/PASSWORD to handle special chars (FIXME)
+        //urlDecode(cfg.ssid, sizeof(cfg.ssid));
+        //mstr::urlDecode(cfg.password, sizeof(cfg.password));
 
         Debug_printf("Connecting to net: %s password: %s\n", cfg.ssid, cfg.password);
 
@@ -775,6 +780,14 @@ void adamFuji::adamnet_get_host_prefix()
 {
 }
 
+// Public method to update host in specific slot
+fujiHost *adamFuji::set_slot_hostname(int host_slot, char *hostname)
+{
+    _fnHosts[host_slot].set_hostname(hostname);
+    _populate_config_from_slots();
+    return &_fnHosts[host_slot];
+}
+
 // Send device slot data to computer
 void adamFuji::adamnet_read_device_slots()
 {
@@ -1035,7 +1048,7 @@ void adamFuji::mount_all()
         if (disk.access_mode == DISK_ACCESS_MODE_WRITE)
             flag[1] = '+';
 
-        if (disk.host_slot != 0xFF)
+        if (disk.host_slot != INVALID_HOST_SLOT && strlen(disk.filename) > 0)
         {
             nodisks = false; // We have a disk in a slot
 

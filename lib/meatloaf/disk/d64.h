@@ -1,30 +1,36 @@
-// .D64 - The D64 disk image format
-// https://vice-emu.sourceforge.io/vice_17.html#SEC345
+// .D64, .D41 - 1541 disk image format
+//
+// https://vice-emu.sourceforge.io/vice_16.html#SEC408
 // https://ist.uwaterloo.ca/~schepers/formats/D64.TXT
+// https://ist.uwaterloo.ca/~schepers/formats/REL.TXT
 // https://ist.uwaterloo.ca/~schepers/formats/GEOS.TXT
 // https://www.lemon64.com/forum/viewtopic.php?t=70024&start=0 (File formats = Why is D64 not called D40/D41)
 //  - disucssion of disk id in sector missing from d64 file format is interesting
 // https://www.c64-wiki.com/wiki/Disk_Image
 // http://unusedino.de/ec64/technical3.html
+// http://www.baltissen.org/newhtm/diskimag.htm
+// http://www.baltissen.org/newhtm/1541c.htm
 //
 
 #ifndef MEATLOAF_MEDIA_D64
 #define MEATLOAF_MEDIA_D64
 
-#include "meat_io.h"
+#include "../meatloaf.h"
 
 #include <map>
 #include <bitset>
+#include <ctime>
 
+#include "../meat_media.h"
 #include "string_utils.h"
-#include "cbm_media.h"
+#include "utils.h"
 
 
 /********************************************************
  * Streams
  ********************************************************/
 
-class D64IStream : public CBMImageStream {
+class D64MStream : public MMediaStream {
 
 protected:
 
@@ -60,10 +66,10 @@ protected:
         uint8_t start_track;
         uint8_t start_sector;
         char filename[16];
-        uint8_t rel_start_track;   // Or GOES info block start track
-        uint8_t rel_start_sector;  // Or GEOS info block start sector
-        uint8_t rel_record_length; // Or GEOS file structure (Sequential / VLIR file)
-        uint8_t geos_type;         // $00 - Non-GEOS (normal C64 file)
+        uint8_t rel_start_track;    // Or GOES info block start track
+        uint8_t rel_start_sector;   // Or GEOS info block start sector
+        uint8_t rel_record_length;  // Or GEOS file structure (Sequential / VLIR file)
+        uint8_t geos_file_type;     // $00 - Non-GEOS (normal C64 file)
         uint8_t year;
         uint8_t month;
         uint8_t day;
@@ -74,7 +80,7 @@ protected:
 
 public:
     std::vector<Partition> partitions;
-    std::vector<uint8_t> sectorsPerTrack = { 17, 18, 19, 21 };
+    std::vector<uint16_t> sectorsPerTrack = { 17, 18, 19, 21 };
     std::vector<uint8_t> interleave = { 3, 10 }; // Directory, File
 
     uint8_t dos_version = 0x41;
@@ -84,7 +90,7 @@ public:
     bool error_info = false;
     std::string bam_message = "";
 
-    D64IStream(std::shared_ptr<MStream> is) : CBMImageStream(is) 
+    D64MStream(std::shared_ptr<MStream> is) : MMediaStream(is)
     {
         // D64 Partition Info
         std::vector<BlockAllocationMap> b = { 
@@ -153,38 +159,38 @@ public:
 
         // // DOLPHIN DOS
         // partitions[0].block_allocation_map.push_back( 
-        //         {
-        //             18,     // track
-        //             0,      // sector
-        //             0xAC,   // offset
-        //             36,      // start_track
-        //             40,     // end_track
-        //             4       // byte_count
-        //         } 
+        //     {
+        //         18,     // track
+        //         0,      // sector
+        //         0xAC,   // offset
+        //         36,     // start_track
+        //         40,     // end_track
+        //         4       // byte_count
+        //     } 
         // );
 
         // // SPEED DOS
         // partitions[0].block_allocation_map.push_back( 
-        //         {
-        //             18,     // track
-        //             0,      // sector
-        //             0xC0,   // offset
-        //             36,     // start_track
-        //             40,     // end_track
-        //             4       // byte_count
-        //         } 
+        //     {
+        //         18,     // track
+        //         0,      // sector
+        //         0xC0,   // offset
+        //         36,     // start_track
+        //         40,     // end_track
+        //         4       // byte_count
+        //     } 
         // );
 
         // // PrologicDOS
         // partitions[0].block_allocation_map.push_back( 
-        //         {
-        //             18,     // track
-        //             0,      // sector
+        //     {
+        //         18,     // track
+        //         0,      // sector
         //         0x90,   // offset
-        //             36,     // start_track
-        //             40,     // end_track
-        //             4       // byte_count
-        //         } 
+        //         36,     // start_track
+        //         40,     // end_track
+        //         4       // byte_count
+        //     } 
         // );
         // partitions[0].header_offset = 0xA4;
 
@@ -192,33 +198,44 @@ public:
 
     };
 
+	// virtual std::unordered_map<std::string, std::string> info() override { 
+    //     return {
+    //         {"System", "Commodore"},
+    //         {"Format", "D64"},
+    //         {"Media Type", "DISK"},
+    //         {"Tracks", getTrackCount()},
+    //         {"Sectors / Blocks", this.getSectorCount()},
+    //         {"Sector / Block Size", std::string(block_size)},
+    //         {"Error Info", (this.error_info) ? "Available" : "Not Available"},
+    //         {"Write Protected", ""},
+    //         {"DOS Format", this.getDiskFormat()}
+    //     }; 
+    // };
 
-    virtual uint16_t blocksFree();
+    uint16_t blocksFree() override;
 
-	virtual uint8_t speedZone( uint8_t track)
-	{
-		return (track < 18) + (track < 25) + (track < 31);
-	};
+    uint8_t speedZone( uint8_t track) override
+    {
+        return (track < 18) + (track < 25) + (track < 31);
+    };
 
     bool seekBlock( uint64_t index, uint8_t offset = 0 ) override;
     bool seekSector( uint8_t track, uint8_t sector, uint8_t offset = 0 ) override;
     bool seekSector( std::vector<uint8_t> trackSectorOffset ) override;
 
-    void seekHeader() override {
-        seekSector( 
-            partitions[partition].header_track, 
-            partitions[partition].header_sector, 
-            partitions[partition].header_offset 
-        );
-        containerStream->read((uint8_t*)&header, sizeof(header));
-    }
 
-    bool seekNextImageEntry() override {
-        return seekEntry( entry_index + 1 );
+    uint16_t getSectorCount( uint16_t track )
+    {
+        return sectorsPerTrack[speedZone(track)];
+    }
+    uint16_t getTrackCount()
+    {
+        return partitions[0].block_allocation_map[0].end_track;
     }
 
     virtual bool seekPath(std::string path) override;
-    size_t readFile(uint8_t* buf, size_t size) override;
+    uint32_t readFile(uint8_t* buf, uint32_t size) override;
+    uint32_t writeFile(uint8_t* buf, uint32_t size) override;
 
     Header header;      // Directory header data
     Entry entry;        // Directory entry data
@@ -227,7 +244,7 @@ public:
     uint64_t block = 0;
     uint8_t track = 0;
     uint8_t sector = 0;
-    uint16_t offset = 0;
+    uint8_t offset = 0;
     uint64_t blocks_free = 0;
 
     uint8_t next_track = 0;
@@ -237,23 +254,52 @@ public:
 private:
     void sendListing();
 
-    bool seekEntry( std::string filename );
-    bool seekEntry( uint32_t index = 0 );
+    bool readHeader() override {
+        seekSector( 
+            partitions[partition].header_track, 
+            partitions[partition].header_sector, 
+            partitions[partition].header_offset 
+        );
+        if (readContainer((uint8_t*)&header, sizeof(header)))
+            return true;
 
+        return false;
+    }
+    bool writeHeader() override {
+        seekSector( 
+            partitions[partition].header_track, 
+            partitions[partition].header_sector, 
+            partitions[partition].header_offset 
+        );
+        if (writeContainer((uint8_t*)&header, sizeof(header)))
+            return true;
+        
+        return false;
+    }
+
+    bool seekEntry( std::string filename ) override;
+    bool seekEntry( uint16_t index = 0 ) override;
+    bool readEntry( uint16_t index = 0 ) override;
+    bool writeEntry( uint16_t index = 0 ) override;
 
     std::string readBlock( uint8_t track, uint8_t sector );
-    bool writeBlock( uint8_t track, uint8_t sector, std::string data );    
+    bool writeBlock( uint8_t track, uint8_t sector, std::string data );
     bool allocateBlock( uint8_t track, uint8_t sector );
     bool deallocateBlock( uint8_t track, uint8_t sector );
+    bool getNextFreeBlock(uint8_t startTrack, uint8_t startSector, uint8_t *foundTrack, uint8_t *foundSector);
+    bool isBlockFree(uint8_t track, uint8_t sector);
+
+    // Container
+    friend class D8BMFile;
+    friend class DFIMFile;
 
     // Disk
-    friend class D64File;
-    friend class D71File;
-    friend class D80File;
-    friend class D81File;
-    friend class D82File;
-    friend class D8BFile;
-    friend class DNPFile;    
+    friend class D64MFile;
+    friend class D71MFile;
+    friend class D80MFile;
+    friend class D81MFile;
+    friend class D82MFile;
+    friend class DNPMFile;    
 };
 
 
@@ -261,39 +307,38 @@ private:
  * File implementations
  ********************************************************/
 
-class D64File: public MFile {
+class D64MFile: public MFile {
 public:
 
-    D64File(std::string path, bool is_dir = true): MFile(path) {
+    D64MFile(std::string path, bool is_dir = true): MFile(path)
+    {
         isDir = is_dir;
 
         media_image = name;
-        mstr::toASCII(media_image);
+        isPETSCII = true;
+        size = 174848; // Default - 35 tracks no errors
     };
     
-    ~D64File() {
+    ~D64MFile() {
         // don't close the stream here! It will be used by shared ptr D64Util to keep reading image params
     }
 
-    MStream* createIStream(std::shared_ptr<MStream> containerIstream) override;
+    MStream* getDecodedStream(std::shared_ptr<MStream> containerIstream) override
+    {
+        // Debug_printv("[%s]", url.c_str());
 
-    std::string petsciiName() override {
-        // It's already in PETSCII
-        mstr::replaceAll(name, "\\", "/");
-        return name;
+        return new D64MStream(containerIstream);
     }
 
     bool isDirectory() override;
     bool rewindDirectory() override;
     MFile* getNextFileInDir() override;
-    bool mkDir() override { return false; };
 
     bool exists() override;
     bool remove() override { return false; };
-    bool rename(std::string dest) { return false; };
+    bool rename(std::string dest) override { return false; };
     time_t getLastWrite() override;
     time_t getCreationTime() override;
-    uint32_t size() override;     
 
     bool isDir = true;
     bool dirIsOpen = false;
@@ -305,20 +350,26 @@ public:
  * FS
  ********************************************************/
 
-class D64FileSystem: public MFileSystem
+class D64MFileSystem: public MFileSystem
 {
 public:
     MFile* getFile(std::string path) override {
         //Debug_printv("path[%s]", path.c_str());
-        return new D64File(path);
+        return new D64MFile(path);
     }
 
-    bool handles(std::string fileName) {
-        //Serial.printf("handles w dnp %s %d\r\n", fileName.rfind(".dnp"), fileName.length()-4);
-        return byExtension(".d64", fileName);
+    bool handles(std::string fileName) override {
+        //printf("handles w dnp %s %d\r\n", fileName.rfind(".dnp"), fileName.length()-4);
+        return byExtension(
+            {
+                ".d64",
+                ".d41"
+            }, 
+            fileName
+        );
     }
 
-    D64FileSystem(): MFileSystem("d64") {};
+    D64MFileSystem(): MFileSystem("d64") {};
 };
 
 

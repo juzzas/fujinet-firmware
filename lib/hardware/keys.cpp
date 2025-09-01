@@ -1,7 +1,9 @@
 
 #include "keys.h"
 
+#if CONFIG_IDF_TARGET_ESP32S3 != y
 #include <esp32/himem.h>
+#endif
 
 #include "../../include/debug.h"
 #include "../../include/pinmap.h"
@@ -10,6 +12,7 @@
 #include "fnConfig.h"
 #include "fnWiFi.h"
 #include "fnBluetooth.h"
+#include "fuji.h"
 
 #include "led.h"
 
@@ -20,7 +23,6 @@ static int mButtonPin[eKey::KEY_COUNT] = {PIN_BUTTON_A, PIN_BUTTON_B, PIN_BUTTON
 
 void KeyManager::setup()
 {
-    mButtonPin[eKey::BUTTON_C] = fnSystem.get_safe_reset_gpio();
 #ifdef PINMAP_ESP32S3
 
     if (PIN_BUTTON_A != GPIO_NUM_NC)
@@ -39,41 +41,58 @@ void KeyManager::setup()
         _keys[eKey::BUTTON_C].disabled = true;
 
 #else /* PINMAP_ESP32S3 */
+    mButtonPin[eKey::BUTTON_A] = PIN_BUTTON_A;
+    mButtonPin[eKey::BUTTON_B] = PIN_BUTTON_B;
+    mButtonPin[eKey::BUTTON_C] = fnSystem.get_safe_reset_gpio();
 
-#ifdef NO_BUTTONS
-    fnSystem.set_pin_mode(PIN_BUTTON_A, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
-    fnSystem.set_pin_mode(PIN_BUTTON_B, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
-#elif defined(PINMAP_A2_REV0) || defined(PINMAP_FUJIAPPLE_IEC)
-    fnSystem.set_pin_mode(PIN_BUTTON_A, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
-#else
-    fnSystem.set_pin_mode(PIN_BUTTON_A, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE);
-#endif /* NO_BUTTONS */
-
-#if !defined(BUILD_LYNX) && !defined(BUILD_APPLE) && !defined(BUILD_RS232) && !defined(BUILD_RC2014) && !defined(BUILD_IEC)
-    fnSystem.set_pin_mode(PIN_BUTTON_B, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE);
-#endif /* NOT LYNX OR A2 */
-
-    // Enable safe reset on Button C if available
-    if (fnSystem.get_hardware_ver() >= 2)
+#   ifdef NO_BUTTONS
+    _keys[eKey::BUTTON_A].disabled = true;
+    _keys[eKey::BUTTON_B].disabled = true;
+    _keys[eKey::BUTTON_C].disabled = true;
+    Debug_println("NO_BUTTONS: disabled all buttons");
+#   else
+    if (PIN_BUTTON_A == GPIO_NUM_NC)
     {
-#if defined(PINMAP_A2_REV0) || defined(PINMAP_FUJIAPPLE_IEC)
-        /* Check if hardware has SPI fix and thus no safe reset button (_keys[eKey::BUTTON_C].disabled = true) */
-        if (fnSystem.spifix() && fnSystem.get_safe_reset_gpio() == 14)
-        {
-            _keys[eKey::BUTTON_C].disabled = true;
-            Debug_println("Safe Reset Button C: DISABLED due to SPI Fix");
-        }
-        else
-        {
-            fnSystem.set_pin_mode(fnSystem.get_safe_reset_gpio(), gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
-            Debug_printf("Safe Reset button ENABLED on GPIO %d\r\n", fnSystem.get_safe_reset_gpio());
-        }
-#else
-        fnSystem.set_pin_mode(fnSystem.get_safe_reset_gpio(), gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE);
-        Debug_printf("Safe Reset button ENABLED on GPIO %d\r\n", fnSystem.get_safe_reset_gpio());
-#endif
+        _keys[eKey::BUTTON_A].disabled = true;
+        Debug_printf("Button A Disabled\r\n");
+    }
+    else
+    {
+        fnSystem.set_pin_mode(PIN_BUTTON_A, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
+        Debug_printf("Button A Enabled on IO%d\r\n",mButtonPin[eKey::BUTTON_A]);
     }
 
+    if (PIN_BUTTON_B == GPIO_NUM_NC)
+    {
+        _keys[eKey::BUTTON_B].disabled = true;
+        Debug_printf("Button B Disabled\r\n");
+    }
+    else
+    {
+        fnSystem.set_pin_mode(PIN_BUTTON_B, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
+        Debug_printf("Button B Enabled on IO%d\r\n", mButtonPin[eKey::BUTTON_B]);
+    }
+
+    if (fnSystem.get_safe_reset_gpio() == GPIO_NUM_NC)
+    {
+        _keys[eKey::BUTTON_C].disabled = true;
+        Debug_printf("Button C (Safe Reset) Disabled\r\n");
+    }
+    else
+    {
+#   ifdef BUILD_APPLE
+        // Rev00 has no pullup for Button C
+        if (fnSystem.get_hardware_ver() == 1)
+            fnSystem.set_pin_mode(PIN_BUTTON_C, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_UP);
+        else
+            fnSystem.set_pin_mode(PIN_BUTTON_C, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE);
+#   else
+        fnSystem.set_pin_mode(PIN_BUTTON_C, gpio_mode_t::GPIO_MODE_INPUT, SystemManager::pull_updown_t::PULL_NONE);
+#   endif        
+        Debug_printf("Button C (Safe Reset) Enabled on IO%d\r\n", mButtonPin[eKey::BUTTON_C]);
+    }
+
+#   endif /* NO_BUTTONS */
 #endif /* PINMAP_ESP32S3 */
 
     // Start a new task to check the status of the buttons
@@ -186,15 +205,11 @@ void KeyManager::_keystate_task(void *param)
 
     KeyManager *pKM = (KeyManager *)param;
 
-#if defined(BUILD_LYNX) || defined(BUILD_APPLE) || defined(BUILD_RS232)
+#if defined(BUILD_LYNX) || defined(BUILD_APPLE) || defined(BUILD_RS232) || defined(BUILD_MAC)
     // No button B onboard
     pKM->_keys[eKey::BUTTON_B].disabled = true;
 #endif
 
-#ifdef BUILD_RS232
-    // No button A onboard
-    pKM->_keys[eKey::BUTTON_A].disabled = true;
-#endif
     while (true)
     {
         vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -213,9 +228,8 @@ void KeyManager::_keystate_task(void *param)
                 fnBtManager.stop();
                 fnLedManager.set(BLUETOOTH_LED, false);
 
-                // Start WiFi
+                // Start WiFi and connect
                 fnWiFi.start();
-                fnWiFi.connect();
 
                 // Save Bluetooth status in fnConfig
                 Config.store_bt_status(false); // Disabled
@@ -234,6 +248,11 @@ void KeyManager::_keystate_task(void *param)
                 Config.save();
             }
 #endif //BLUETOOTH_SUPPORT
+#ifdef BUILD_MAC
+            Debug_println("ACTION: Mount all disks");
+            theFuji.mount_all();
+#endif /* BUILD_MAC */
+
             break;
 
         case eKeyStatus::SHORT_PRESS:
@@ -248,30 +267,13 @@ void KeyManager::_keystate_task(void *param)
 #endif
 
 #if defined(PINMAP_A2_REV0) || defined(PINMAP_FUJILOAF_REV0)
-            if(fnSystem.ledstrip())
-            {
-                // if (fnLedStrip.rainbowTimer > 0)
-                //     fnLedStrip.stopRainbow();
-                // else
-                //     fnLedStrip.startRainbow(10);
-            }
-            else
-            {
-                fnLedManager.blink(LED_BUS, 2); // blink to confirm a button press
-            }
-            Debug_println("ACTION: Reboot");
-            //fnSystem.reboot();
+            fnLedManager.blink(LED_BUS, 2); // blink to confirm a button press
             // IEC.releaseLines();
-#ifdef BUILD_IEC
-            Debug_printf("bus_state[%d]\r\n", IEC.bus_state);
-#endif
             Debug_printf("Heap: %lu\r\n",esp_get_free_internal_heap_size());
             // Debug_printf("PsramSize: %u\r\n", fnSystem.get_psram_size());
             // Debug_printf("himem phys: %u\r\n", esp_himem_get_phys_size());
             // Debug_printf("himem free: %u\r\n", esp_himem_get_free_size());
             // Debug_printf("himem reserved: %u\r\n", esp_himem_reserved_area_size());
-#else
-            fnLedManager.blink(BLUETOOTH_LED, 2); // blink to confirm a button press
 #endif // PINMAP_A2_REV0
 
 // Either toggle BT baud rate or do a disk image rotation on B_KEY SHORT PRESS
@@ -289,12 +291,20 @@ void KeyManager::_keystate_task(void *param)
                 sio_message_t msg;
                 msg.message_id = SIOMSG_DISKSWAP;
                 xQueueSend(SIO.qSioMessages, &msg, 0);
+                fnLedManager.blink(BLUETOOTH_LED, 2); // blink to confirm a button press
 #endif /* BUILD_ATARI */
+#ifdef BUILD_ADAM
+                Debug_println("ACTION: Send image_rotate message to SIO queue");
+                adamnet_message_t msg;
+                msg.message_id = ADAMNETMSG_DISKSWAP;
+                xQueueSend(AdamNet.qAdamNetMessages, &msg, 0);
+#endif /* BUILD_ADAM*/ 
             }
             break;
 
         case eKeyStatus::DOUBLE_TAP:
             Debug_println("BUTTON_A: DOUBLE-TAP");
+            fnSystem.debug_print_tasks();
             break;
 
         default:
@@ -322,10 +332,7 @@ void KeyManager::_keystate_task(void *param)
         case eKeyStatus::SHORT_PRESS:
             Debug_println("BUTTON_B: SHORT PRESS");
 #ifdef BUILD_ATARI
-            Debug_println("ACTION: Send debug_tape message to SIO queue");
-            sio_message_t msg;
-            msg.message_id = SIOMSG_DEBUG_TAPE;
-            xQueueSend(SIO.qSioMessages, &msg, 0);
+            Debug_printv("Free Internal Heap: %lu\nFree Total Heap: %lu",esp_get_free_internal_heap_size(),esp_get_free_heap_size());
 #endif /* BUILD_ATARI */
             break;
         case eKeyStatus::DOUBLE_TAP:

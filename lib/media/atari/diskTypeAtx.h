@@ -1,7 +1,10 @@
 #ifndef _MEDIATYPE_ATX_
 #define _MEDIATYPE_ATX_
 
+#ifdef ESP_PLATFORM
 #include <esp_timer.h>
+#include "../../include/PSRAMAllocator.h"
+#endif
 
 #include <vector>
 
@@ -154,7 +157,11 @@ public:
     uint8_t * data = nullptr;
 
     // Actual sectors
+#ifdef ESP_PLATFORM
+    std::vector<AtxSector,PSRAMAllocator<AtxSector>> sectors;
+#else
     std::vector<AtxSector> sectors;
+#endif
 
     ~AtxTrack();
     AtxTrack();
@@ -174,15 +181,23 @@ private:
 
     uint8_t _atx_drive_model = ATX_DRIVE_MODEL_810;
 
+#ifdef ESP_PLATFORM
     portMUX_TYPE __atx_timerMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
 
     uint64_t __atx_position_time;
     uint16_t __atx_current_angular_pos = 0;
     uint32_t _atx_total_rotations = 0;
 
+#ifdef ESP_PLATFORM
     esp_timer_handle_t _atx_timer = nullptr;
+#endif
 
+#ifdef ESP_PLATFORM
+    std::vector<AtxTrack,PSRAMAllocator<AtxTrack>> _tracks;
+#else
     std::vector<AtxTrack> _tracks;
+#endif
 
     // ATX header.density
     uint8_t _atx_density = ATX_DENSITY_SINGLE;
@@ -209,9 +224,9 @@ private:
 
 public:
     virtual bool read(uint16_t sectornum, uint16_t *readcount) override;
-    virtual bool format(uint16_t *respopnsesize) override;
+    virtual bool format(uint16_t *responsesize) override;
 
-    virtual mediatype_t mount(FILE *f, uint32_t disksize) override;
+    virtual mediatype_t mount(fnFile *f, uint32_t disksize) override;
 
     virtual void status(uint8_t statusbuff[4]) override;
 

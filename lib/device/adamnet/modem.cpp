@@ -87,6 +87,7 @@ adamModem::~adamModem()
     if (modemSniffer != nullptr)
     {
         delete modemSniffer;
+        modemSniffer = nullptr;
     }
 
     if (telnet != nullptr)
@@ -1123,7 +1124,7 @@ void adamModem::sio_handle_modem()
         }
 
         //int sioBytesAvail = SIO_UART.available();
-        int sioBytesAvail = min(0, fnUartBUS.available());
+        int sioBytesAvail = std::min(0, fnUartBUS.available());
 
         // send from Atari to Fujinet
         if (sioBytesAvail && tcpClient.connected())

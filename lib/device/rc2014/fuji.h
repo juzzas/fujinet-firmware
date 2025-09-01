@@ -3,6 +3,11 @@
 
 #include <cstdint>
 
+#include "mbedtls/sha1.h"
+#include "mbedtls/sha256.h"
+#include "mbedtls/sha512.h"
+#include "mbedtls/md5.h"
+
 #include "network.h"
 #include "disk.h"
 #include "file.h"
@@ -10,6 +15,8 @@
 #include "fujiHost.h"
 #include "fujiDisk.h"
 #include "fujiCmd.h"
+
+#include "hash.h"
 
 #define MAX_HOSTS 8
 #define MAX_DISK_DEVICES 8
@@ -26,7 +33,7 @@
 
 typedef struct
 {
-    char ssid[32];
+    char ssid[MAX_SSID_LEN+1];
     char hostname[64];
     unsigned char localIP[4];
     unsigned char gateway[4];
@@ -35,13 +42,14 @@ typedef struct
     unsigned char macAddress[6];
     unsigned char bssid[6];
     char fn_version[15];
-} AdapterConfig;
+} __attribute__((packed)) AdapterConfig;
 
-enum appkey_mode : uint8_t
+enum appkey_mode : int8_t
 {
+    APPKEYMODE_INVALID = -1,
     APPKEYMODE_READ = 0,
     APPKEYMODE_WRITE,
-    APPKEYMODE_INVALID
+    APPKEYMODE_READ_256
 };
 
 struct appkey
@@ -85,6 +93,13 @@ private:
 
     appkey _current_appkey;
 
+    mbedtls_md5_context _md5;
+    mbedtls_sha1_context _sha1;
+    mbedtls_sha256_context _sha256;
+    mbedtls_sha512_context _sha512;
+
+    Hash::Algorithm algorithm = Hash::Algorithm::UNKNOWN;
+
 protected:
     void rc2014_reset_fujinet();          // 0xFF
     void rc2014_net_get_ssid();           // 0xFE
@@ -123,6 +138,22 @@ protected:
     void rc2014_enable_device();          // 0xD5
     void rc2014_disable_device();         // 0xD4
     void rc2014_device_enabled_status();  // 0xD1
+    void rc2014_base64_encode_input();    // 0xD0
+    void rc2014_base64_encode_compute();  // 0xCF
+    void rc2014_base64_encode_length();   // 0xCE
+    void rc2014_base64_encode_output();   // 0xCD
+    void rc2014_base64_decode_input();    // 0xCC
+    void rc2014_base64_decode_compute();  // 0xCB
+    void rc2014_base64_decode_length();   // 0xCA
+    void rc2014_base64_decode_output();   // 0xC9
+    void rc2014_hash_input();             // 0xC8
+    void rc2014_hash_compute(bool clear_data); // 0xC7, 0xC3
+    void rc2014_hash_length();            // 0xC6
+    void rc2014_hash_output();            // 0xC5
+    void rc2014_hash_clear();             // 0xC2
+
+    // TODO
+    // void rc2014_get_adapter_config_extended(); // 0xC4
 
     void rc2014_test_command();
 
@@ -136,9 +167,9 @@ protected:
 
 public:
     bool boot_config = true;
-    
+
     bool status_wait_enabled = true;
-    
+
     rc2014Disk *bootdisk();
 
     rc2014Network *network();
@@ -155,6 +186,7 @@ public:
 
     fujiHost *get_hosts(int i) { return &_fnHosts[i]; }
     fujiDisk *get_disks(int i) { return &_fnDisks[i]; }
+    fujiHost *set_slot_hostname(int host_slot, char *hostname);
 
     void _populate_slots_from_config();
     void _populate_config_from_slots();

@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <sstream>
+#include <sys/stat.h>
 
 #include "keys.h"
 #include "utils.h"
@@ -17,14 +18,13 @@
 */
 void fnConfig::load()
 {
+#ifdef ESP_PLATFORM
     Debug_println("fnConfig::load");
 
-#if defined(NO_BUTTONS) || defined(BUILD_LYNX) || defined(BUILD_APPLE) || defined(BUILD_RS232) || defined(BUILD_RC2014)
+#if defined(BUILD_ATARI) || defined(BUILD_ADAM)
     // Don't erase config if there are no buttons or on devices without Button B
-#else
     // Clear the config file if key is currently pressed
     // This is the "Turn on while holding B button to reset Config" option.
-#ifndef BUILD_IEC
     if (fnKeyManager.keyCurrentlyPressed(BUTTON_B))
     {
         Debug_println("fnConfig deleting configuration file and skipping SD check");
@@ -37,13 +37,12 @@ void fnConfig::load()
 
         // full reset, so set us as not encrypting
         _general.encrypt_passphrase = false;
-        
+
         _dirty = true; // We have a new config, so we treat it as needing to be saved
         return;
     }
-#endif
 
-#endif /* NO_BUTTONS */
+#endif /* BUILD_ATARI */
 
     /*
 Original behavior: read from FLASH first and only read from SD if nothing found on FLASH.
@@ -89,6 +88,28 @@ New behavior: copy from SD first if available, then read FLASH.
         Debug_println("Load fnconfig.ini from flash");
         fin = fsFlash.file_open(CONFIG_FILENAME);
     }
+// ESP_PLATFORM
+ #else
+// !ESP_PLATFORM
+    Debug_printf("fnConfig::load \"%s\"\n", _general.config_file_path.c_str());
+        
+    struct stat st;
+    if (stat(_general.config_file_path.c_str(), &st) < 0)
+    {
+        _dirty = true; // We have a new (blank) config, so we treat it as needing to be saved
+        Debug_println("No config found - starting fresh!");
+        return; // No local copy - ABORT
+    }
+    FILE *fin = fopen(_general.config_file_path.c_str(), FILE_READ_TEXT);
+// !ESP_PLATFORM
+ #endif
+
+    if (fin == nullptr)
+    {
+        Debug_printf("Failed to open config file\n");
+        return;
+    }
+
     // Read INI file into buffer (for speed)
     // Then look for sections and handle each
     char *inibuffer = (char *)malloc(CONFIG_FILEBUFFSIZE);
@@ -162,6 +183,24 @@ New behavior: copy from SD first if available, then read FLASH.
         case SECTION_DEVICE_ENABLE: // Thom put this here to handle explicit device enables in adam
             _read_section_device_enable(ss);
             break;
+        // Bus Over IP
+        case SECTION_BOIP:
+            _read_section_boip(ss);
+            break;
+#ifndef ESP_PLATFORM
+        case SECTION_SERIAL:
+            _read_section_serial(ss);
+            break;
+        // Bus Over Serial, for APPLE SmartPort over Serial via USB/Serial
+        case SECTION_BOS:
+            _read_section_bos(ss);
+            break;
+#endif
+#ifdef BUILD_RS232
+        case SECTION_RS232:
+            _read_section_rs232(ss);
+            break;
+#endif
         case SECTION_UNKNOWN:
             break;
         }
@@ -169,6 +208,7 @@ New behavior: copy from SD first if available, then read FLASH.
 
     _dirty = false;
 
+#ifdef ESP_PLATFORM
     if (fnConfig::get_general_fnconfig_spifs() == true) // Only if flash is enabled
     {
         if (true == fsFlash.exists(CONFIG_FILENAME))
@@ -215,4 +255,5 @@ New behavior: copy from SD first if available, then read FLASH.
             } 
         }
     }
+#endif // ESP_PLATFORM
 }

@@ -12,8 +12,10 @@
 
 #include "status_error_codes.h"
 
+#include <vector>
 
-NetworkProtocolFTP::NetworkProtocolFTP(string *rx_buf, string *tx_buf, string *sp_buf)
+
+NetworkProtocolFTP::NetworkProtocolFTP(std::string *rx_buf, std::string *tx_buf, std::string *sp_buf)
     : NetworkProtocolFS(rx_buf, tx_buf, sp_buf)
 {
     Debug_printf("NetworkProtocolFTP::ctor\r\n");
@@ -28,6 +30,7 @@ NetworkProtocolFTP::~NetworkProtocolFTP()
 {
     Debug_printf("NetworkProtocolFTP::dtor\r\n");
     delete ftp;
+    ftp = nullptr;
 }
 
 bool NetworkProtocolFTP::open_file_handle()
@@ -36,14 +39,14 @@ bool NetworkProtocolFTP::open_file_handle()
 
     switch (aux1_open)
     {
-    case 4:
+    case PROTOCOL_OPEN_READ:
         stor = false;
         break;
-    case 8:
+    case PROTOCOL_OPEN_WRITE:
         stor = true;
         break;
-    case 9:
-    case 12:
+    case PROTOCOL_OPEN_APPEND:
+    case PROTOCOL_OPEN_READWRITE:
         error = NETWORK_ERROR_NOT_IMPLEMENTED;
         return true;
         break;
@@ -63,12 +66,12 @@ bool NetworkProtocolFTP::open_dir_handle()
     return res;
 }
 
-bool NetworkProtocolFTP::mount(EdUrlParser *url)
+bool NetworkProtocolFTP::mount(PeoplesUrlParser *url)
 {
     bool res;
 
     // Path isn't used
-    res = ftp->login("anonymous", "fujinet@fujinet.online", url->hostName);
+    res = ftp->login("anonymous", "fujinet@fujinet.online", url->host);
     fserror_to_error();
     return res;
 }
@@ -166,7 +169,7 @@ bool NetworkProtocolFTP::read_file_handle(uint8_t *buf, unsigned short len)
 bool NetworkProtocolFTP::read_dir_entry(char *buf, unsigned short len)
 {
     bool res;
-    string filename;
+    std::string filename;
     long filesz;
     bool is_dir;
 
@@ -253,32 +256,32 @@ bool NetworkProtocolFTP::special_80(uint8_t *sp_buf, unsigned short len, cmdFram
     return false;
 }
 
-bool NetworkProtocolFTP::rename(EdUrlParser *url, cmdFrame_t *cmdFrame)
+bool NetworkProtocolFTP::rename(PeoplesUrlParser *url, cmdFrame_t *cmdFrame)
 {
     return false;
 }
 
-bool NetworkProtocolFTP::del(EdUrlParser *url, cmdFrame_t *cmdFrame)
+bool NetworkProtocolFTP::del(PeoplesUrlParser *url, cmdFrame_t *cmdFrame)
 {
     return false;
 }
 
-bool NetworkProtocolFTP::mkdir(EdUrlParser *url, cmdFrame_t *cmdFrame)
+bool NetworkProtocolFTP::mkdir(PeoplesUrlParser *url, cmdFrame_t *cmdFrame)
 {
     return false;
 }
 
-bool NetworkProtocolFTP::rmdir(EdUrlParser *url, cmdFrame_t *cmdFrame)
+bool NetworkProtocolFTP::rmdir(PeoplesUrlParser *url, cmdFrame_t *cmdFrame)
 {
     return false;
 }
 
-bool NetworkProtocolFTP::lock(EdUrlParser *url, cmdFrame_t *cmdFrame)
+bool NetworkProtocolFTP::lock(PeoplesUrlParser *url, cmdFrame_t *cmdFrame)
 {
     return false;
 }
 
-bool NetworkProtocolFTP::unlock(EdUrlParser *url, cmdFrame_t *cmdFrame)
+bool NetworkProtocolFTP::unlock(PeoplesUrlParser *url, cmdFrame_t *cmdFrame)
 {
     return false;
 }

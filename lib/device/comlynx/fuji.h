@@ -35,11 +35,12 @@ typedef struct
     char fn_version[15];
 } AdapterConfig;
 
-enum appkey_mode : uint8_t
+enum appkey_mode : int8_t
 {
+    APPKEYMODE_INVALID = -1,
     APPKEYMODE_READ = 0,
     APPKEYMODE_WRITE,
-    APPKEYMODE_INVALID
+    APPKEYMODE_READ_256
 };
 
 struct appkey
@@ -61,9 +62,9 @@ private:
     bool setSSIDStarted = false;
 
     uint8_t response[1024];
-    uint16_t response_len;
+    uint16_t response_len = 0;
 
-    systemBus *_comlynx_bus;
+    systemBus *_comlynx_bus = nullptr;
 
     fujiHost _fnHosts[MAX_HOSTS];
 
@@ -71,7 +72,7 @@ private:
 
     int _current_open_directory_slot = -1;
 
-    lynxDisk *_bootDisk; // special disk drive just for configuration
+    lynxDisk *_bootDisk = nullptr; // special disk drive just for configuration
 
     uint8_t bootMode = 0; // Boot mode 0 = CONFIG, 1 = MINI-BOOT
 
@@ -136,9 +137,9 @@ protected:
 
 public:
     bool boot_config = true;
-    
+
     bool status_wait_enabled = true;
-    
+
     lynxDisk *bootdisk();
 
     lynxNetwork *network();
@@ -155,6 +156,7 @@ public:
 
     fujiHost *get_hosts(int i) { return &_fnHosts[i]; }
     fujiDisk *get_disks(int i) { return &_fnDisks[i]; }
+    fujiHost *set_slot_hostname(int host_slot, char *hostname);
 
     void _populate_slots_from_config();
     void _populate_config_from_slots();
@@ -163,11 +165,11 @@ public:
 
     lynxFuji();
 
-    string copySpec;
+    std::string copySpec;
     unsigned char sourceSlot;
     unsigned char destSlot;
-    string sourcePath;
-    string destPath;
+    std::string sourcePath;
+    std::string destPath;
     FILE *sourceFile;
     FILE *destFile;
     char *dataBuf;

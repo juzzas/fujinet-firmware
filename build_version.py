@@ -11,7 +11,7 @@ if cmdline.find('buildfs') or cmdline.find('uploadfs'):
     # Change build tool if we are using LittleFS
     if any("FLASH_LITTLEFS" in x for x in env['BUILD_FLAGS']):
         print("\033[1;31mReplacing MKSPIFFSTOOL with mklittlefs\033[1;37m")
-        env.Replace (MKSPIFFSTOOL = "mklittlefs")
+        #env.Replace (MKSPIFFSTOOL = "mklittlefs")
 
 # Disable automatic versioning
 if 1:
@@ -31,7 +31,7 @@ else:
 
     ver_date = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    rxs = ['^#define FN_VERSION_MAJOR (\w+)', '^#define FN_VERSION_MINOR (\w+)',
+    rxs = ['^#define FN_VERSION_MAJOR (\\w)', '^#define FN_VERSION_MINOR (\\w)',
            '^(#define FN_VERSION_BUILD)', '^(#define FN_VERSION_DATE)', '^(#define FN_VERSION_FULL)']
 
     ver_maj = ""

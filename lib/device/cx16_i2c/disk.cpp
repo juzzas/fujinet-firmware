@@ -88,7 +88,10 @@ mediatype_t cx16Disk::mount(FILE *f, const char *filename, uint32_t disksize, me
 cx16Disk::~cx16Disk()
 {
     if (_disk != nullptr)
+    {
         delete _disk;
+        _disk = nullptr;
+    }
 }
 
 // Unmount disk file
@@ -122,7 +125,7 @@ void cx16Disk::process(uint32_t commanddata, uint8_t checksum)
         (cmdFrame.comnd != SIO_DISKCMD_STATUS && cmdFrame.comnd != SIO_DISKCMD_HSIO_INDEX))
         return;
 
-    Debug_print("disk sio_process()\n");
+    Debug_print("disk cx16Disk::process()\n");
 
     switch (cmdFrame.comnd)
     {

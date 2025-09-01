@@ -3,10 +3,30 @@
 
 #include <expat.h>
 
+#include "WebDAV.h"
 #include "FS.h"
 
+#ifdef ESP_PLATFORM
 #include "fnHttpClient.h"
-#include "WEBDAV.h"
+#define HTTP_CLIENT_CLASS fnHttpClient
+#else
+#include "mgHttpClient.h"
+#define HTTP_CLIENT_CLASS mgHttpClient
+#endif
+
+// on Windows/MinGW DELETE is defined already ...
+#if defined(_WIN32) && defined(DELETE)
+#undef DELETE
+#endif
+
+
+#define OPEN_MODE_HTTP_GET      (0x04)
+#define OPEN_MODE_HTTP_PUT      (0x08)
+#define OPEN_MODE_HTTP_GET_H    (0x0C)
+#define OPEN_MODE_HTTP_POST     (0x0D)
+#define OPEN_MODE_HTTP_PUT_H    (0x0E)
+#define OPEN_MODE_HTTP_DELETE   (0x05)
+#define OPEN_MODE_HTTP_DELETE_H (0x09)
 
 class NetworkProtocolHTTP : public NetworkProtocolFS
 {
@@ -18,7 +38,7 @@ public:
      * @param sp_buf pointer to special buffer
      * @return a NetworkProtocolFS object
      */
-    NetworkProtocolHTTP(string *rx_buf, string *tx_buf, string *sp_buf);
+    NetworkProtocolHTTP(std::string *rx_buf, std::string *tx_buf, std::string *sp_buf);
 
     /**
      * dTOR
@@ -57,7 +77,7 @@ protected:
      * @param url the url to mount
      * @return false on no error, true on error.
      */
-    virtual bool mount(EdUrlParser *url);
+    virtual bool mount(PeoplesUrlParser *url);
 
     /**
      * @brief Unmount TNFS server specified in mountInfo.
@@ -119,35 +139,35 @@ protected:
 
     /**
      * @brief Rename file specified by incoming devicespec.
-     * @param url pointer to EdUrlParser pointing to file/dest to rename
+     * @param url pointer to PeoplesUrlParser pointing to file/dest to rename
      * @param cmdFrame the command frame
      * @return TRUE on error, FALSE on success
      */
-    virtual bool rename(EdUrlParser *url, cmdFrame_t *cmdFrame);
+    virtual bool rename(PeoplesUrlParser *url, cmdFrame_t *cmdFrame);
 
     /**
      * @brief Delete file specified by incoming devicespec.
-     * @param url pointer to EdUrlParser pointing to file to delete
+     * @param url pointer to PeoplesUrlParser pointing to file to delete
      * @param cmdFrame the command frame
      * @return TRUE on error, FALSE on success
      */
-    virtual bool del(EdUrlParser *url, cmdFrame_t *cmdFrame);
+    virtual bool del(PeoplesUrlParser *url, cmdFrame_t *cmdFrame);
 
     /**
      * @brief Make directory specified by incoming devicespec.
-     * @param url pointer to EdUrlParser pointing to file to delete
+     * @param url pointer to PeoplesUrlParser pointing to file to delete
      * @param cmdFrame the command frame
      * @return TRUE on error, FALSE on success
      */
-    virtual bool mkdir(EdUrlParser *url, cmdFrame_t *cmdFrame);
+    virtual bool mkdir(PeoplesUrlParser *url, cmdFrame_t *cmdFrame);
 
     /**
      * @brief Remove directory specified by incoming devicespec.
-     * @param url pointer to EdUrlParser pointing to file to delete
+     * @param url pointer to PeoplesUrlParser pointing to file to delete
      * @param cmdFrame the command frame
      * @return TRUE on error, FALSE on success
      */
-    virtual bool rmdir(EdUrlParser *url, cmdFrame_t *cmdFrame);
+    virtual bool rmdir(PeoplesUrlParser *url, cmdFrame_t *cmdFrame);
 
 private:
     /**
@@ -157,10 +177,11 @@ private:
     {
         GET,
         POST,
-        PUT
+        PUT,
+        DELETE
     } HTTPOpenMode;
 
-    HTTPOpenMode httpOpenMode;
+    HTTPOpenMode httpOpenMode = HTTPOpenMode::GET;
 
     /**
      * The HTTP channel mode, used to distinguish between headers and data
@@ -179,42 +200,44 @@ private:
     /**
      * The fnHTTPClient object used by the adaptor for HTTP calls
      */
-    fnHttpClient *client;
+    HTTP_CLIENT_CLASS *client = nullptr;
 
     /**
      * result code returned by an HTTP verb
      */
-    int resultCode;
+    int resultCode = 0;
 
     /**
-     * Array of up to 32 headers
+     * Headers the client wants us to collect information on if they are seen.
+     * The contract is to only collect headers the client is interested in, which they register for before making the request.
      */
-    char *collect_headers[32];
+    // char *collect_headers[32];
+    std::vector<std::string> collect_headers;
 
     /**
      * Collected headers count
      */
-    size_t collect_headers_count;
+    // size_t collect_headers_count = 0;
 
     /**
      * Returned headers
      */
-    vector<string> returned_headers;
+    std::vector<std::string> returned_headers;
 
     /**
      * Returned header cursor
      */
-    size_t returned_header_cursor;
+    size_t returned_header_cursor = 0;
 
     /**
      * Body size (fileSize is reset with this when DATA is engaged)
      */
-    int bodySize;
+    int bodySize = 0;
 
     /**
      * POST or PUT Data to send.
      */
-    string postData;
+    std::string postData;
 
     /**
      * WebDAV handler
@@ -224,7 +247,7 @@ private:
     /**
      * Current Directory entry cursor
      */
-    vector<WebDAV::DAVEntry>::iterator dirEntryCursor;
+    std::vector<WebDAV::DAVEntry>::iterator dirEntryCursor;
 
     /**
      * Do HTTP transaction
@@ -294,42 +317,44 @@ private:
     bool parseDir(char *buf, unsigned short len);
 };
 
-/**
-     * @brief Template to wrap Start call.
-     * @param data pointer to parent class
-     * @param El the current element being parsed
-     * @param attr the array of attributes attached to element
-     */
-template <class T>
-void Start(void *data, const XML_Char *El, const XML_Char **attr)
-{
-    T *handler = static_cast<T *>(data);
-    handler->Start(El, attr);
-}
+// moved to WebDAV.cpp
+//
+// /**
+//      * @brief Template to wrap Start call.
+//      * @param data pointer to parent class
+//      * @param El the current element being parsed
+//      * @param attr the array of attributes attached to element
+//      */
+// template <class T>
+// void Start(void *data, const XML_Char *El, const XML_Char **attr)
+// {
+//     T *handler = static_cast<T *>(data);
+//     handler->Start(El, attr);
+// }
 
-/**
- * @brief Template to wrap End call
- * @param data pointer to parent class.
- * @param El the current element being parsed.
- **/
-template <class T>
-void End(void *data, const XML_Char *El)
-{
-    T *handler = static_cast<T *>(data);
-    handler->End(El);
-}
+// /**
+//  * @brief Template to wrap End call
+//  * @param data pointer to parent class.
+//  * @param El the current element being parsed.
+//  **/
+// template <class T>
+// void End(void *data, const XML_Char *El)
+// {
+//     T *handler = static_cast<T *>(data);
+//     handler->End(El);
+// }
 
-/**
- * @brief template to wrap character data.
- * @param data pointer to parent class
- * @param s pointer to the character data
- * @param len length of character data at pointer
- **/
-template <class T>
-void Char(void *data, const XML_Char *s, int len)
-{
-    T *handler = static_cast<T *>(data);
-    handler->Char(s, len);
-}
+// /**
+//  * @brief template to wrap character data.
+//  * @param data pointer to parent class
+//  * @param s pointer to the character data
+//  * @param len length of character data at pointer
+//  **/
+// template <class T>
+// void Char(void *data, const XML_Char *s, int len)
+// {
+//     T *handler = static_cast<T *>(data);
+//     handler->Char(s, len);
+// }
 
 #endif /* NETWORKPROTOCOLHTTP_H */

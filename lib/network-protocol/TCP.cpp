@@ -6,12 +6,17 @@
 
 #include "TCP.h"
 
-#include <arpa/inet.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <string.h>
+#include "compat_inet.h"
 
 #include "../../include/debug.h"
 
 #include "status_error_codes.h"
 
+#include <vector>
 
 /**
  * @brief ctor
@@ -20,7 +25,7 @@
  * @param sp_buf pointer to special buffer
  * @return a NetworkProtocolTCP object
  */
-NetworkProtocolTCP::NetworkProtocolTCP(string *rx_buf, string *tx_buf, string *sp_buf)
+NetworkProtocolTCP::NetworkProtocolTCP(std::string *rx_buf, std::string *tx_buf, std::string *sp_buf)
     : NetworkProtocol(rx_buf, tx_buf, sp_buf)
 {
     Debug_printf("NetworkProtocolTCP::ctor\r\n");
@@ -37,7 +42,6 @@ NetworkProtocolTCP::~NetworkProtocolTCP()
     if (server != nullptr)
     {
         delete server;
-
         server = nullptr;
     }
 }
@@ -47,17 +51,17 @@ NetworkProtocolTCP::~NetworkProtocolTCP()
  * @param urlParser The URL object passed in to open.
  * @param cmdFrame The command frame to extract aux1/aux2/etc.
  */
-bool NetworkProtocolTCP::open(EdUrlParser *urlParser, cmdFrame_t *cmdFrame)
+bool NetworkProtocolTCP::open(PeoplesUrlParser *urlParser, cmdFrame_t *cmdFrame)
 {
     bool ret = true; // assume error until proven ok
 
-    Debug_printf("NetworkProtocolTCP::open(%s:%s)", urlParser->hostName.c_str(), urlParser->port.c_str());
+    Debug_printf("NetworkProtocolTCP::open(%s:%s)\r\n", urlParser->host.c_str(), urlParser->port.c_str());
 
-    if (urlParser->hostName.empty())
+    if (urlParser->host.empty())
     {
         // Open server on port, otherwise, treat as empty socket.
         if (!urlParser->port.empty())
-            ret = open_server(atoi(urlParser->port.c_str()));
+            ret = open_server(urlParser->getPort());
         else
         {
             Debug_printf("Empty socket enabled.\r\n");
@@ -70,7 +74,7 @@ bool NetworkProtocolTCP::open(EdUrlParser *urlParser, cmdFrame_t *cmdFrame)
             urlParser->port = "23";
 
         // open client connection
-        ret = open_client(urlParser->hostName, atoi(urlParser->port.c_str()));
+        ret = open_client(urlParser->host, urlParser->getPort());
     }
 
     // call base class
@@ -111,16 +115,9 @@ bool NetworkProtocolTCP::close()
 bool NetworkProtocolTCP::read(unsigned short len)
 {
     unsigned short actual_len = 0;
-    uint8_t *newData = (uint8_t *)malloc(len);
-    string newString;
+    std::vector<uint8_t> newData = std::vector<uint8_t>(len);
 
     Debug_printf("NetworkProtocolTCP::read(%u)\r\n", len);
-
-    if (newData == nullptr)
-    {
-        Debug_printf("Could not allocate %u bytes! Aborting!\r\n",len);
-        return true; // error.
-    }
 
     if (receiveBuffer->length() == 0)
     {
@@ -128,35 +125,28 @@ bool NetworkProtocolTCP::read(unsigned short len)
         if (!client.connected())
         {
             error = NETWORK_ERROR_NOT_CONNECTED;
-            free(newData);
             return true; // error
         }
 
         // Do the read from client socket.
-        actual_len = client.read(newData, len);
+        actual_len = client.read(newData.data(), len);
 
         // bail if the connection is reset.
         if (errno == ECONNRESET)
         {
             error = NETWORK_ERROR_CONNECTION_RESET;
-            free(newData);
             return true;
         }
         else if (actual_len != len) // Read was short and timed out.
         {
             Debug_printf("Short receive. We got %u bytes, returning %u bytes and ERROR\r\n", actual_len, len);
             error = NETWORK_ERROR_SOCKET_TIMEOUT;
-            free(newData);
             return true;
         }
 
         // Add new data to buffer.
-        newString = string((char *)newData, len);
-        *receiveBuffer += newString;
-    }
-    // Return success
-    free(newData);
-    
+        receiveBuffer->insert(receiveBuffer->end(), newData.begin(), newData.end());
+    }    
     error = 1;
     return NetworkProtocol::read(len);
 }
@@ -267,12 +257,15 @@ uint8_t NetworkProtocolTCP::special_inquiry(uint8_t cmd)
  */
 bool NetworkProtocolTCP::special_00(cmdFrame_t *cmdFrame)
 {
+    Debug_printf("NetworkProtocolTCP::special_00(%c)\n",cmdFrame->comnd);
+
     switch (cmdFrame->comnd)
     {
     case 'A':
         return special_accept_connection();
         break;
     case 'c':
+        Debug_printf("CLOSING CLIENT CONNECTION!!!\n");
         return special_close_client_connection();
         break;
     }
@@ -328,7 +321,7 @@ bool NetworkProtocolTCP::open_server(unsigned short port)
  * @param port the port number to connect to.
  * @return error flag. TRUE on erorr. FALSE on success.
  */
-bool NetworkProtocolTCP::open_client(string hostname, unsigned short port)
+bool NetworkProtocolTCP::open_client(std::string hostname, unsigned short port)
 {
     int res = 0;
 
@@ -336,7 +329,11 @@ bool NetworkProtocolTCP::open_client(string hostname, unsigned short port)
 
     Debug_printf("Connecting to host %s port %d\r\n", hostname.c_str(), port);
 
+#ifdef ESP_PLATFORM
     res = client.connect(hostname.c_str(), port);
+#else
+    res = client.connect(hostname.c_str(), port, 5000); // TODO constant for connect timeout
+#endif
 
     if (res == 0)
     {
@@ -371,7 +368,7 @@ bool NetworkProtocolTCP::special_accept_connection()
         {
             remoteIP = client.remoteIP();
             remotePort = client.remotePort();
-            remoteIPString = inet_ntoa(remoteIP);
+            remoteIPString = compat_inet_ntoa(remoteIP);
             Debug_printf("Accepted connection from %s:%u\r\n", remoteIPString, remotePort);
             return false;
         }
@@ -401,21 +398,26 @@ bool NetworkProtocolTCP::special_close_client_connection()
     {
         Debug_printf("Attempted close client connection on NULL server socket. Aborting.\r\n");
         error = NETWORK_ERROR_SERVER_NOT_RUNNING;
-        return true; // Error
+        return false;
     }
 
     if (!client.connected())
     {
         Debug_printf("Attempted close client with no client connected.\r\n");
         error = NETWORK_ERROR_NOT_CONNECTED;
-        return true;
+        return false;
     }
 
     remoteIP = client.remoteIP();
     remotePort = client.remotePort();
-    remoteIPString = inet_ntoa(remoteIP);
+    remoteIPString = compat_inet_ntoa(remoteIP);
 
     Debug_printf("Disconnecting client %s:%u\r\n", remoteIPString, remotePort);
+
+    // Clear all buffers.
+    receiveBuffer->clear();
+    transmitBuffer->clear();
+    specialBuffer->clear();
 
     client.stop();
 

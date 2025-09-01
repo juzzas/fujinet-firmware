@@ -31,12 +31,19 @@ constexpr const char * const drivewirePrinter::printer_model_str[PRINTER_INVALID
 
 drivewirePrinter::~drivewirePrinter()
 {
-    delete _pptr;
+    if (_pptr != nullptr)
+    {
+        delete _pptr;
+        _pptr = nullptr;
+    }
 }
 
 // write for W commands
-void drivewirePrinter::drivewire_write(uint8_t aux1, uint8_t aux2)
+void drivewirePrinter::write(uint8_t c)
 {
+    _last_ms = fnSystem.millis();
+    _pptr->provideBuffer()[0] = c;
+    _pptr->process(1, 0, 0);
 }
 
 /**
@@ -57,7 +64,10 @@ void drivewirePrinter::drivewire_status()
 void drivewirePrinter::set_printer_type(drivewirePrinter::printer_type printer_type)
 {
     // Destroy any current printer emu object
-    delete _pptr;
+    if (_pptr != nullptr)
+    {
+        delete _pptr;
+    }
 
     _ptype = printer_type;
     switch (printer_type)
@@ -167,11 +177,6 @@ drivewirePrinter::printer_type drivewirePrinter::match_modelname(std::string mod
             break;
 
     return (printer_type)i;
-}
-
-// Process command
-void drivewirePrinter::drivewire_process(uint32_t commanddata, uint8_t checksum)
-{
 }
 
 #endif /* BUILD_COCO */

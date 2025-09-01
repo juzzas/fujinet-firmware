@@ -1,24 +1,28 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
+#ifdef ESP_PLATFORM
 #include <esp_timer.h>
+#endif
 
+#include <algorithm>
+#include <cstdint>
+#include <memory>
 #include <string>
+#include <unordered_map>
 
-#include "../../bus/bus.h"
+#include "bus.h"
+#include "fnjson.h"
+#include "network_data.h"
+#include "peoples_url_parser.h"
+#include "Protocol.h"
+// #include "ProtocolParser.h"
 
-#include "../EdUrlParser/EdUrlParser.h"
-
-#include "../network-protocol/Protocol.h"
-
-#include "../fnjson/fnjson.h"
-
-#include "ProtocolParser.h"
 
 /**
- * Number of devices to expose via APPLE2, becomes 0x71 to 0x70 + NUM_DEVICES - 1
+ * Number of devices to expose via APPLE2
  */
-#define NUM_DEVICES 8
+#define NUM_DEVICES 4
 
 /**
  * The size of rx and tx buffers
@@ -50,7 +54,9 @@ public:
     /**
      * The spinlock for the ESP32 hardware timers. Used for interrupt rate limiting.
      */
+#ifdef ESP_PLATFORM // OS
     portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
 
     /**
      * Toggled by the rate limiting timer to indicate that the PROCEED interrupt should
@@ -149,94 +155,83 @@ public:
     virtual void rename();
     virtual void mkdir();
 
+    std::unordered_map<uint8_t, NetworkData> network_data_map;
+    uint8_t current_network_unit = 1;
 
 private:
-    /**
-     * JSON Object
-     */
-    FNJSON json;
+
+    // /**
+    //  * JSON Object
+    //  */
+    // FNJSON json;
+
+    // /**
+    //  * The Receive buffer for this N: device
+    //  */
+    // std::string *receiveBuffer = nullptr;
+
+    // /**
+    //  * The transmit buffer for this N: device
+    //  */
+    // std::string *transmitBuffer = nullptr;
+
+    // /**
+    //  * The special buffer for this N: device
+    //  */
+    // std::string *specialBuffer = nullptr;
+
+    // /**
+    //  * The PeoplesUrlParser object used to hold/process a URL
+    //  */
+    // std::unique_ptr<PeoplesUrlParser> urlParser = nullptr;
+
+    // /**
+    //  * Instance of currently open network protocol
+    //  */
+    // NetworkProtocol *protocol = nullptr;
+
+    // /**
+    //  * @brief Factory that creates protocol from urls
+    // */
+    // ProtocolParser *protocolParser = nullptr;
 
     /**
-     * The Receive buffer for this N: device
+     * Error number when there's an ... error!
      */
-    std::string *receiveBuffer = nullptr;
-
-    /**
-     * The transmit buffer for this N: device
-     */
-    std::string *transmitBuffer = nullptr;
-
-    /**
-     * The special buffer for this N: device
-     */
-    std::string *specialBuffer = nullptr;
-
-    /**
-     * The EdUrlParser object used to hold/process a URL
-     */
-    EdUrlParser *urlParser = nullptr;
-
-    /**
-     * Instance of currently open network protocol
-     */
-    NetworkProtocol *protocol = nullptr;
-
-    /**
-     * @brief Factory that creates protocol from urls
-    */
-    ProtocolParser *protocolParser = nullptr;
-
-    /**
-     * Network Status object
-     */
-    union _status
-    {
-        struct _statusbits
-        {
-            bool client_data_available : 1;
-            bool client_connected : 1;
-            bool client_error : 1;
-            bool server_connection_available : 1;
-            bool server_error : 1;
-        } bits;
-        unsigned char byte;
-    } statusByte;
-
-    /**
-     * Error number, if status.bits.client_error is set.
-     */
-    uint8_t err; 
+    uint8_t err = 0; 
 
     /**
      * ESP timer handle for the Interrupt rate limiting timer
      */
+#ifdef ESP_PLATFORM // OS
     esp_timer_handle_t rateTimerHandle = nullptr;
+#endif
 
-    /**
-     * Devicespec passed to us, e.g. N:HTTP://WWW.GOOGLE.COM:80/
-     */
-    std::string deviceSpec;
+    // /**
+    //  * Devicespec passed to us, e.g. N:HTTP://WWW.GOOGLE.COM:80/
+    //  */
+    // std::string deviceSpec;
 
-    /**
-     * The currently set Prefix for this N: device, set by iwm call 0x2C
-     */
-    std::string prefix;
+    // /**
+    //  * The currently set Prefix for this N: device, set by iwm call 0x2C
+    //  */
+    // std::string prefix;
 
     /**
      * The AUX1 value used for OPEN.
      */
-    uint8_t open_aux1;
+    uint8_t open_aux1 = 0;
 
     /**
      * The AUX2 value used for OPEN.
      */
-    uint8_t open_aux2;
+    uint8_t open_aux2 = 0;
 
     /**
      * The Translation mode ORed into AUX2 for READ/WRITE/STATUS operations.
      * 0 = No Translation, 1 = CR<->EOL (Macintosh), 2 = LF<->EOL (UNIX), 3 = CR/LF<->EOL (PC/Windows)
      */
-    uint8_t trans_aux2;
+    uint8_t trans_aux2 = 0;
 
     /**
      * Return value for DSTATS inquiry
@@ -246,12 +241,12 @@ private:
     /**
      * The login to use for a protocol action
      */
-    std::string login;
+    // std::string login;
 
     /**
      * The password to use for a protocol action
      */
-    std::string password;
+    // std::string password;
 
     /**
      * Timer Rate for interrupt timer
@@ -266,11 +261,11 @@ private:
      * @enum PROTOCOL Send to protocol
      * @enum JSON Send to JSON parser.
      */
-    enum _channel_mode
-    {
-        PROTOCOL,
-        JSON
-    } channelMode;
+    // enum _channel_mode
+    // {
+    //     PROTOCOL,
+    //     JSON
+    // } channelMode;
 
     /**
      * The current receive state, are we sending channel or status data?
@@ -296,7 +291,7 @@ private:
     /**
      * Create the deviceSpec and fix it for parsing
      */
-    void create_devicespec(string d);
+    void create_devicespec(std::string d);
 
     /**
      * Create a urlParser from deviceSpec

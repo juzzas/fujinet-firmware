@@ -55,12 +55,17 @@ rc2014Network::~rc2014Network()
     transmitBuffer->clear();
     specialBuffer->clear();
 
-    if (receiveBuffer != nullptr)
-        delete receiveBuffer;
-    if (transmitBuffer != nullptr)
-        delete transmitBuffer;
-    if (specialBuffer != nullptr)
-        delete specialBuffer;
+    delete receiveBuffer;
+    delete transmitBuffer;
+    delete specialBuffer;
+    receiveBuffer = nullptr;
+    transmitBuffer = nullptr;
+    specialBuffer = nullptr;
+
+    if (protocol != nullptr)
+        delete protocol;
+
+    protocol = nullptr;
 }
 
 /** rc2014 COMMANDS ***************************************************************/
@@ -118,7 +123,7 @@ void rc2014Network::open()
     }
 
     // Attempt protocol open
-    if (protocol->open(urlParser, &cmdFrame) == true)
+    if (protocol->open(urlParser.get(), &cmdFrame) == true)
     {
         network_status.error = protocol->error;
         Debug_printf("Protocol unable to make connection. Error: %d\n", protocol->error);
@@ -312,7 +317,13 @@ void rc2014Network::status()
     switch (channelMode)
     {
     case PROTOCOL:
-        err = protocol->status(&s);
+        if (protocol == nullptr) {
+            Debug_printf("ERROR: Calling status on a null protocol.\r\n");
+            err = true;
+            s.error = true;
+        } else {
+            err = protocol->status(&s);
+        }
         break;
     case JSON:
         err = status_channel_json(&s);
@@ -371,9 +382,8 @@ void rc2014Network::rc2014_set_json_query()
             in[i] = 0x00;
     }
 
-    inp = strrchr((const char *)in, ':');
+    inp = (const char *)in;
     Debug_printf("#1 %s\n",inp);
-    inp++;
     json.setReadQuery(string(inp),cmdFrame.aux2);
     json_bytes_remaining = json.readValueLen();
     tmp = (uint8_t *)malloc(json.readValueLen());
@@ -442,7 +452,7 @@ void rc2014Network::set_prefix(unsigned short s)
 
     if (prefixSpec_str == "..") // Devance path N:..
     {
-        vector<int> pathLocations;
+        std::vector<int> pathLocations;
         for (int i = 0; i < prefix.size(); i++)
         {
             if (prefix[i] == '/')
@@ -651,13 +661,13 @@ void rc2014Network::create_devicespec(string d)
 }
 
 /*
- * The resulting URL is then sent into EdURLParser to get our URLParser object which is used in the rest
+ * The resulting URL is then sent into a URL Parser to get our URLParser object which is used in the rest
  * of Network.
 */
 void rc2014Network::create_url_parser()
 {
-    std::string url = deviceSpec.substr(deviceSpec.find(":") + 1);
-    urlParser = EdUrlParser::parseUrl(url);
+    std::string url = deviceSpec;
+    urlParser = PeoplesUrlParser::parseURL(url);
 }
 
 void rc2014Network::parse_and_instantiate_protocol(string d)
@@ -668,19 +678,21 @@ void rc2014Network::parse_and_instantiate_protocol(string d)
     // Invalid URL returns error 165 in status.
     if (!urlParser->isValidUrl())
     {
-        Debug_printf("Invalid devicespec: %s\n", deviceSpec.c_str());
+        Debug_printf("Invalid devicespec: >%s<\n", deviceSpec.c_str());
         statusByte.byte = 0x00;
         statusByte.bits.client_error = true;
         err = NETWORK_ERROR_INVALID_DEVICESPEC;
         return;
     }
 
-    Debug_printf("::parse_and_instantiate_protocol transformed to (%s, %s)\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
+#ifdef VERBOSE_PROTOCOL
+    Debug_printf("::parse_and_instantiate_protocol -> spec: >%s<, url: >%s<\r\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
+#endif
 
     // Instantiate protocol object.
     if (!instantiate_protocol())
     {
-        Debug_printf("Could not open protocol.\n");
+        Debug_printf("Could not open protocol. spec: >%s<, url: >%s<\n", deviceSpec.c_str(), urlParser->mRawUrl.c_str());
         statusByte.byte = 0x00;
         statusByte.bits.client_error = true;
         err = NETWORK_ERROR_GENERAL;

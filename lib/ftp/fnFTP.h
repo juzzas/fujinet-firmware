@@ -9,9 +9,9 @@
 
 #include "fnTcpClient.h"
 
-using namespace std;
+using std::string;
 
-#define FTP_TIMEOUT 5000 // This is how long we wait for a reply packet from the server
+#define FTP_TIMEOUT 15000 // This is how long we wait for a reply packet from the server
 
 class fnFTP
 {
@@ -28,6 +28,13 @@ public:
     virtual ~fnFTP();
 
     /**
+     *  Class 'fnFTP' does not have a copy constructor which is recommended since it has dynamic memory/resource allocation(s).
+     * Unless these two functions are implemented, they are being deleted so they cannot be used
+     */
+    fnFTP (const fnFTP&) = delete;
+    fnFTP& operator= (const fnFTP&) = delete;
+
+    /**
      * Log into FTP server.
      * @param username username for login
      * @param password password for login
@@ -35,7 +42,7 @@ public:
      * @param port port to login (default 21)
      * @return TRUE on error, FALSE on success
      */
-    bool login(string _username, string _password, string _hostname, unsigned short _port = 21);
+    bool login(const string &_username, const string &_password, const string &_hostname, unsigned short _port = 21);
 
     /**
      * Log out of FTP server, closes control connection.
@@ -106,6 +113,13 @@ public:
      */
     bool data_connected();
 
+
+    /**
+     * Recovery FTP connection.
+     * @return TRUE on error, FALSE on success
+     */
+    bool reconnect();
+
 protected:
 private:
     /**
@@ -114,13 +128,13 @@ private:
     string hostname;
 
     /* do STOR - file opened for write */
-    bool _stor;
+    bool _stor = false;
     
     /* if to check control channel too while dealing with data channel */
-    bool _expect_control_response;
+    bool _expect_control_response = false;
 
     /* FTP status code, taken from FTP server response */
-    int _statusCode;
+    int _statusCode = 0;
 
     /**
      * The port number. (21 by default)
@@ -130,12 +144,12 @@ private:
     /**
      * The fnTCP client used for control connection
      */
-    fnTcpClient *control;
+    fnTcpClient *control = nullptr;
 
     /**
      * The fnTCP client used for data connection
      */
-    fnTcpClient *data;
+    fnTcpClient *data = nullptr;
 
     /**
      * last response from control connection.
@@ -155,12 +169,12 @@ private:
     /**
      * Directory buffer stream
      */
-    stringstream dirBuffer;
-
+    std::stringstream dirBuffer;
+    
     /**
      * The data port returned by EPSV
      */
-    unsigned short data_port;
+    unsigned short data_port = 0;
 
     /**
      * read and parse control response

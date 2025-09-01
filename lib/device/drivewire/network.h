@@ -1,18 +1,22 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
+#ifdef ESP32_PLATFORM
 #include <driver/timer.h>
+#endif
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "bus.h"
 
 #include "Protocol.h"
-#include "EdUrlParser.h"
+#include "peoples_url_parser.h"
 #include "networkStatus.h"
 #include "status_error_codes.h"
 #include "fnjson.h"
+#include "ProtocolParser.h"
 
 /**
  * Number of devices to expose via DRIVEWIRE, becomes 0x71 to 0x70 + NUM_DEVICES - 1
@@ -41,14 +45,52 @@ public:
     virtual ~drivewireNetwork();
 
     /**
+     * Toggled by the rate limiting timer to indicate that the CD interrupt should
+     * be pulsed.
+     */
+    bool interruptCD = false;
+
+    /**
+     * The spinlock for the ESP32 hardware timers. Used for interrupt rate limiting.
+     */
+#ifdef ESP_PLATFORM
+    portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+
+    /**
+     * @brief process network device command
+     */
+    void process();
+
+    /**
+     * Check to see if PROCEED needs to be asserted.
+     */
+    void poll_interrupt();
+
+    /**
+     * @brief Ready?
+     */
+    void ready();
+
+    /**
+     * @brief Get last error
+     */
+    void send_error();
+
+    /**
+     * @brief send response
+     */
+    void send_response();
+    
+    /**
      * Called for DRIVEWIRE Command 'O' to open a connection to a network protocol, allocate all buffers,
      */
-    virtual void drivewire_open();
+    virtual void open();
 
     /**
      * Called for DRIVEWIRE Command 'C' to close a connection to a network protocol, de-allocate all buffers,
      */
-    virtual void drivewire_close();
+    virtual void close();
 
     /**
      * DRIVEWIRE Read command
@@ -57,21 +99,21 @@ public:
      *  
      * @note It is the channel's responsibility to pad to required length.
      */
-    virtual void drivewire_read();
+    virtual void read();
 
     /**
      * DRIVEWIRE Write command
      * Write # of bytes specified by aux1/aux2 from tx_buffer out to DRIVEWIRE. If protocol is unable to return requested
      * number of bytes, return ERROR.
      */
-    virtual void drivewire_write();
+    virtual void write();
 
     /**
      * DRIVEWIRE Status Command. First try to populate NetworkStatus object from protocol. If protocol not instantiated,
      * or Protocol does not want to fill status buffer (e.g. due to unknown aux1/aux2 values), then try to deal
      * with them locally. Then serialize resulting NetworkStatus object to DRIVEWIRE.
      */
-    virtual void drivewire_special();
+    virtual void special();
 
     /**
      * DRIVEWIRE Special, called as a default for any other DRIVEWIRE command not processed by the other drivewire_ functions.
@@ -79,41 +121,40 @@ public:
      * process the special command. Otherwise, the command is handled locally. In either case, either drivewire_complete()
      * or drivewire_error() is called.
      */
-    virtual void drivewire_status();
+    virtual void status();
 
     /**
      * @brief set channel mode, JSON or PROTOCOL
      */
-    virtual void drivewire_set_channel_mode();
+    virtual void set_channel_mode();
 
     /**
      * @brief Called to set prefix
      */
-    virtual void drivewire_set_prefix();
+    virtual void set_prefix();
 
     /**
      * @brief Called to get prefix
      */
-    virtual void drivewire_get_prefix();
+    virtual void get_prefix();
 
     /**
      * @brief called to set login
      */
-    virtual void drivewire_set_login();
+    virtual void set_login();
 
     /**
      * @brief called to set password
      */
-    virtual void drivewire_set_password();
-
-    /**
-     * Process incoming DRIVEWIRE command for device 0x7X
-     * @param comanddata incoming 4 bytes containing command and aux bytes
-     * @param checksum 8 bit checksum
-     */
-    virtual void drivewire_process(uint32_t commanddata, uint8_t checksum);
+    virtual void set_password();
 
 private:
+
+    /**
+     * @brief the response buffer
+     */
+    std::string response;
+
     /**
      * Buffer for holding devicespec
      */
@@ -122,22 +163,22 @@ private:
     /**
      * The Receive buffer for this N: device
      */
-    string *receiveBuffer = nullptr;
+    std::string *receiveBuffer = nullptr;
 
     /**
      * The transmit buffer for this N: device
      */
-    string *transmitBuffer = nullptr;
+    std::string *transmitBuffer = nullptr;
 
     /**
      * The special buffer for this N: device
      */
-    string *specialBuffer = nullptr;
+    std::string *specialBuffer = nullptr;
 
     /**
-     * The EdUrlParser object used to hold/process a URL
+     * The PeoplesUrlParser object used to hold/process a URL
      */
-    EdUrlParser *urlParser = nullptr;
+    std::unique_ptr<PeoplesUrlParser> urlParser = nullptr;
 
     /**
      * Instance of currently open network protocol
@@ -145,35 +186,49 @@ private:
     NetworkProtocol *protocol = nullptr;
 
     /**
+     * @brief Factory that creates protocol from urls
+    */
+    ProtocolParser *protocolParser = nullptr;
+
+    /**
      * Network Status object
      */
-    NetworkStatus status;
+    NetworkStatus ns;
+
+    /**
+     * ESP timer handle for the Interrupt rate limiting timer
+     */
+#ifdef ESP_PLATFORM
+    esp_timer_handle_t rateTimerHandle = nullptr;
+#else
+    uint64_t lastInterruptMs;
+#endif
 
     /**
      * Devicespec passed to us, e.g. N:HTTP://WWW.GOOGLE.COM:80/
      */
-    string deviceSpec;
+    std::string deviceSpec;
 
     /**
      * The currently set Prefix for this N: device, set by DRIVEWIRE call 0x2C
      */
-    string prefix;
+    std::string prefix;
 
     /**
      * The AUX1 value used for OPEN.
      */
-    uint8_t open_aux1;
+    uint8_t open_aux1 = 0;
 
     /**
      * The AUX2 value used for OPEN.
      */
-    uint8_t open_aux2;
+    uint8_t open_aux2 = 0;
 
     /**
      * The Translation mode ORed into AUX2 for READ/WRITE/STATUS operations.
      * 0 = No Translation, 1 = CR<->EOL (Macintosh), 2 = LF<->EOL (UNIX), 3 = CR/LF<->EOL (PC/Windows)
      */
-    uint8_t trans_aux2;
+    uint8_t trans_aux2 = 0;
 
     /**
      * Return value for DSTATS inquiry
@@ -183,12 +238,21 @@ private:
     /**
      * The login to use for a protocol action
      */
-    string login;
+    std::string login;
 
     /**
      * The password to use for a protocol action
      */
-    string password;
+    std::string password;
+
+    /**
+     * Timer Rate for interrupt timer (ms)
+     */
+#ifdef ESP_PLATFORM
+    int timerRate = 100;
+#else
+    int timerRate = 20;
+#endif
 
     /**
      * The channel mode for the currently open DRIVEWIRE device. By default, it is PROTOCOL, which passes
@@ -213,12 +277,22 @@ private:
     /**
      * The fnJSON parser wrapper object
      */
-    FNJSON *json;
+    FNJSON *json = nullptr;
 
     /**
      * Bytes sent of current JSON query object.
      */
-    unsigned short json_bytes_remaining=0;
+    unsigned short json_bytes_remaining = 0;
+
+    /**
+     * Called to pulse the CD interrupt, rate limited by the interrupt timer.
+     */
+    void assert_interrupt();
+
+    /**
+     * Return 16 bit value returned from command frame 
+     */
+    uint16_t get_daux() { return (uint16_t)((cmdFrame.aux1 * 256) + cmdFrame.aux2);}
 
     /**
      * Instantiate protocol object
@@ -227,15 +301,25 @@ private:
     bool instantiate_protocol();
 
     /**
+     * Create the deviceSpec and fix it for parsing
+     */
+    void create_devicespec();
+
+    /**
+     * Create a urlParser from deviceSpec
+    */
+   void create_url_parser();
+
+    /**
      * Is this a valid URL? (used to generate ERROR 165)
      */
-    bool isValidURL(EdUrlParser *url);
+    bool isValidURL(PeoplesUrlParser *url);
 
     /**
      * Preprocess a URL given aux1 open mode. This is used to work around various assumptions that different
      * disk utility packages do when opening a device, such as adding wildcards for directory opens. 
      * 
-     * The resulting URL is then sent into EdURLParser to get our URLParser object which is used in the rest
+     * The resulting URL is then sent into a URL Parser to get our URLParser object which is used in the rest
      * of drivewireNetwork.
      * 
      * This function is a mess, because it has to be, maybe we can factor it out, later. -Thom
@@ -259,36 +343,36 @@ private:
      * @param num_bytes Number of bytes to read.
      * @return TRUE on error, FALSE on success. Passed directly to bus_to_computer().
      */
-    bool drivewire_read_channel(unsigned short num_bytes);
+    bool read_channel(unsigned short num_bytes);
 
     /**
      * @brief Perform read of the current JSON channel
      * @param num_bytes Number of bytes to read
      */
-    bool drivewire_read_channel_json(unsigned short num_bytes);
+    bool read_channel_json(unsigned short num_bytes);
 
     /**
      * Perform the correct write based on value of channelMode
      * @param num_bytes Number of bytes to write.
      * @return TRUE on error, FALSE on success. Used to emit drivewire_error or drivewire_complete().
      */
-    bool drivewire_write_channel(unsigned short num_bytes);
+    bool write_channel(unsigned short num_bytes);
 
     /**
      * @brief perform local status commands, if protocol is not bound, based on cmdFrame
      * value.
      */
-    void drivewire_status_local();
+    void status_local();
 
     /**
      * @brief perform channel status commands, if there is a protocol bound.
      */
-    void drivewire_status_channel();
+    void status_channel();
 
     /**
      * @brief get JSON status (# of bytes in receive channel)
      */
-    bool drivewire_status_channel_json(NetworkStatus *ns);
+    bool status_channel_json(NetworkStatus *ns);
 
     /**
      * @brief Do an inquiry to determine whether a protoocol supports a particular command.
@@ -296,14 +380,14 @@ private:
      * or $FF - Command not supported, which should then be used as a DSTATS value by the
      * Atari when making the N: DRIVEWIRE call.
      */
-    void drivewire_special_inquiry();
+    void special_inquiry();
 
     /**
      * @brief called to handle special protocol interactions when DSTATS=$00, meaning there is no payload.
      * Essentially, call the protocol action 
      * and based on the return, signal drivewire_complete() or error().
      */
-    void drivewire_special_00();
+    void special_00();
 
     /**
      * @brief called to handle protocol interactions when DSTATS=$40, meaning the payload is to go from
@@ -311,7 +395,7 @@ private:
      * buffer (containing the devicespec) and based on the return, use bus_to_computer() to transfer the
      * resulting data. Currently this is assumed to be a fixed 256 byte buffer.
      */
-    void drivewire_special_40();
+    void special_40();
 
     /**
      * @brief called to handle protocol interactions when DSTATS=$80, meaning the payload is to go from
@@ -319,7 +403,7 @@ private:
      * buffer (containing the devicespec) and based on the return, use bus_to_peripheral() to transfer the
      * resulting data. Currently this is assumed to be a fixed 256 byte buffer.
      */
-    void drivewire_special_80();
+    void special_80();
 
     /**
      * @brief Perform the inquiry, handle both local and protocol commands.
@@ -330,33 +414,37 @@ private:
     /**
      * @brief set translation specified by aux1 to aux2_translation mode.
      */
-    void drivewire_set_translation();
+    void set_translation();
 
     /**
      * @brief Parse incoming JSON. (must be in JSON channelMode)
      */
-    void drivewire_parse_json();
+    void parse_json();
 
     /**
-     * @brief Set JSON query string. (must be in JSON channelMode)
+     * @brief Set JSON query std::string. (must be in JSON channelMode)
      */
-    void drivewire_set_json_query();
-
-    /**
-     * @brief Set timer rate for PROCEED timer in ms
-     */
-    void drivewire_set_timer_rate();
+    void json_query();
 
     /**
      * @brief perform ->FujiNet commands on protocols that do not use an explicit OPEN channel.
      */
-    void drivewire_do_idempotent_command_80();
+    void do_idempotent_command_80();
 
     /**
      * @brief parse URL and instantiate protocol
      */
     void parse_and_instantiate_protocol();
 
+    /**
+     * Start the Interrupt rate limiting timer
+     */
+    void timer_start();
+
+    /**
+     * Stop the Interrupt rate limiting timer
+     */
+    void timer_stop();
 };
 
 #endif /* NETWORK_H */

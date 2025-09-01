@@ -3,6 +3,7 @@
 #include "disk.h"
 
 #include <cstring>
+#include <memory.h>
 
 #include "../../include/debug.h"
 
@@ -125,6 +126,25 @@ void sioDisk::sio_status()
 
     uint8_t _status[4];
     _status[0] = 0x00;
+    
+    if (_disk != nullptr)
+    {
+        if (_disk->_disk_num_sectors == 1040)
+        {
+            _status[0] |= 0x80; // 1050 density
+        }
+
+        if (_disk->_disk_sector_size == 256)
+        {
+            _status[0] |= 0x20; // Double density
+        }
+
+        if (_disk->_disk_num_sectors == 1440 || _disk->_disk_num_sectors == 2880)
+        {
+            _status[0] |= 0x40; // Double sided
+        }
+    }
+
     _status[1] = ~DISK_CTRL_STATUS_CLEAR; // Negation of default clear status
     _status[2] = DRIVE_DEFAULT_TIMEOUT_810;
     _status[3] = 0x00;
@@ -197,7 +217,7 @@ void sioDisk::sio_write_percom_block()
    then we assume it's MEDIATYPE_ATR.
    Return value is MEDIATYPE_UNKNOWN in case of failure.
 */
-mediatype_t sioDisk::mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type)
+mediatype_t sioDisk::mount(fnFile *f, const char *filename, uint32_t disksize, mediatype_t disk_type)
 {
     // TAPE or CASSETTE: use this function to send file info to cassette device
     //  MediaType::discover_disktype(filename) can detect CAS and WAV files
@@ -260,7 +280,10 @@ mediatype_t sioDisk::mount(FILE *f, const char *filename, uint32_t disksize, med
 sioDisk::~sioDisk()
 {
     if (_disk != nullptr)
+    {
         delete _disk;
+        _disk = nullptr;
+    }
 }
 
 // Unmount disk file
@@ -272,11 +295,15 @@ void sioDisk::unmount()
     {
         _disk->unmount();
         device_active = false;
+#ifndef ESP_PLATFORM // apc: good for ESP too?
+        delete _disk;
+        _disk = nullptr;
+#endif
     }
 }
 
 // Create blank disk
-bool sioDisk::write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors)
+bool sioDisk::write_blank(fnFile *f, uint16_t sectorSize, uint16_t numSectors)
 {
     Debug_print("disk CREATE NEW IMAGE\n");
 
@@ -292,11 +319,11 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
     if (_disk == nullptr || _disk->_disktype == MEDIATYPE_UNKNOWN)
         return;
 
-    if (device_active == false &&
-        (cmdFrame.comnd != SIO_DISKCMD_STATUS && cmdFrame.comnd != SIO_DISKCMD_HSIO_INDEX))
+    if ((device_active == false && cmdFrame.device != SIO_DEVICEID_DISK) || // not active and not D1
+        (device_active == false && theFuji.boot_config == false)) // not active and not config boot
         return;
 
-    Debug_print("disk sio_process()\n");
+    Debug_printf("disk sio_process(), baud: %d\n", SIO.getBaudrate());
 
     switch (cmdFrame.comnd)
     {
@@ -338,7 +365,7 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
         }
         else
         {
-            sio_ack();
+            sio_late_ack();
             sio_write(false);
         }
         return;
@@ -357,7 +384,7 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
             }
             else
             {
-                sio_ack();
+                sio_late_ack();
                 sio_write(false);
             }
         }
@@ -402,7 +429,7 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
         }
         else
         {
-            sio_ack();
+            sio_late_ack();
             sio_write(true);
         }
         return;
@@ -421,7 +448,7 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
             }
             else
             {
-                sio_ack();
+                sio_late_ack();
                 sio_write(true);
             }
             return;
@@ -446,7 +473,7 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
         sio_read_percom_block();
         return;
     case SIO_DISKCMD_PERCOM_WRITE:
-        sio_ack();
+        sio_late_ack();
         sio_write_percom_block();
         return;
     case SIO_DISKCMD_HSIO_INDEX:
@@ -454,6 +481,7 @@ void sioDisk::sio_process(uint32_t commanddata, uint8_t checksum)
         {
             sio_ack();
             sio_high_speed();
+            SIO.toggleBaudrate();
             return;
         }
         break;

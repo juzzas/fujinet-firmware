@@ -1,5 +1,6 @@
 #include "fnConfig.h"
 #include <cstring>
+#include "compat_string.h"
 
 void fnConfig::store_udpstream_host(const char host_ip[64])
 {
@@ -9,6 +10,11 @@ void fnConfig::store_udpstream_host(const char host_ip[64])
 void fnConfig::store_udpstream_port(int port)
 {
     _network.udpstream_port = port;
+}
+
+void fnConfig::store_udpstream_servermode(bool mode)
+{
+    _network.udpstream_servermode = mode;
 }
 
 void fnConfig::_read_section_network(std::stringstream &ss)

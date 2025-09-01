@@ -22,24 +22,7 @@ constexpr const char *const iecPrinter::printer_model_str[PRINTER_INVALID];
 iecPrinter::~iecPrinter()
 {
     delete _pptr;
-}
-
-// write for W commands
-void iecPrinter::write(uint8_t channel)
-{
-    // Receive data from computer
-    while (!(IEC.flags & EOI_RECVD))
-    {
-        int16_t b = IEC.receiveByte();
-        if (b == -1)
-        {
-            return;
-        }
-
-        _pptr->provideBuffer()[0] = (uint8_t)b;
-        _pptr->process(1, commanddata.channel, 0);
-        _last_ms = fnSystem.millis();
-    }
+    _pptr = nullptr;
 }
 
 /**
@@ -51,15 +34,20 @@ void iecPrinter::print_from_cpm(uint8_t c)
 }
 
 // Status
+// TODO IMPLEMENT
+/*
 void iecPrinter::status()
 {
-    // TODO IMPLEMENT
 }
+*/
 
 void iecPrinter::set_printer_type(iecPrinter::printer_type printer_type)
 {
     // Destroy any current printer emu object
-    delete _pptr;
+    if (_pptr != nullptr)
+    {
+        delete _pptr;
+    }
 
     _ptype = printer_type;
     switch (printer_type)
@@ -101,7 +89,7 @@ void iecPrinter::set_printer_type(iecPrinter::printer_type printer_type)
 }
 
 // Constructor just sets a default printer type
-iecPrinter::iecPrinter(FileSystem *filesystem, printer_type print_type)
+iecPrinter::iecPrinter(uint8_t devnum, FileSystem *filesystem, printer_type print_type) : IECDevice(devnum)
 {
     _storage = filesystem;
     set_printer_type(print_type);
@@ -113,6 +101,7 @@ void iecPrinter::shutdown()
     if (_pptr != nullptr)
         _pptr->closeOutput();
 }
+
 /* Returns a printer type given a string model name
  */
 iecPrinter::printer_type iecPrinter::match_modelname(std::string model_name)
@@ -136,17 +125,26 @@ iecPrinter::printer_type iecPrinter::match_modelname(std::string model_name)
     return (printer_type)i;
 }
 
-// Process command
-device_state_t iecPrinter::process()
+
+void iecPrinter::listen(uint8_t channel)
 {
-    // Call base class
-    virtualDevice::process();
-
-    if (commanddata.primary == IEC_LISTEN &&
-        commanddata.secondary == IEC_REOPEN)
-        write(commanddata.channel);
-
-    return device_state;
+  _channel = channel;
 }
+
+
+int8_t iecPrinter::canWrite() 
+{ 
+  return 1; 
+}
+
+
+void iecPrinter::write(uint8_t data, bool eoi)
+{
+  _pptr->provideBuffer()[0] = data;
+  _pptr->process(1, _channel, 0);
+  _last_ms = fnSystem.millis();
+}
+
+
 
 #endif /* BUILD_IEC */

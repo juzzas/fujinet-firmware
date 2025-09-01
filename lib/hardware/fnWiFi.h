@@ -1,6 +1,12 @@
 #ifndef FNWIFI_H
 #define FNWIFI_H
 
+#ifndef ESP_PLATFORM
+// dummy wifi module
+#include "fnDummyWiFi.h"
+#endif // !ESP_PLATFORM
+
+#ifdef ESP_PLATFORM
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <esp_netif.h>
@@ -11,7 +17,10 @@
 
 #define FNWIFI_RECONNECT_RETRIES 4
 #define FNWIFI_SCAN_RESULTS_MAX 20
-#define FNWIFI_BIT_CONNECTED BIT0
+
+#define WIFI_CONNECTED_BIT    BIT0
+#define WIFI_FAIL_BIT         BIT1
+#define WIFI_NO_IP_YET_BIT    BIT2
 
 // using namespace std;
 
@@ -25,7 +34,7 @@ private:
         // bool enabled;
     };
 
-   bool _started = false;
+    bool _started = false;
     bool _connected = false;
     std::string _ssid;
     std::string _password;
@@ -41,6 +50,9 @@ private:
 
     char *_mac_to_string(char dest[18], uint8_t mac[6]);
 
+    static void conn_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
+    static esp_err_t block();
+
     static void _wifi_event_handler(void *arg, esp_event_base_t event_base,
                                     int32_t event_id, void *event_data);
     EventGroupHandle_t _wifi_event_group;
@@ -52,17 +64,20 @@ private:
     uint16_t _common_index = 0;
     std::vector<stored_wifi> _matched_wifis;
 
+public:
     std::vector<std::string> get_network_names();
     std::vector<stored_wifi> get_stored_wifis();
     std::vector<stored_wifi> match_stored_with_network_wifis(std::vector<std::string> network_names, std::vector<stored_wifi> stored_wifis);
+    void store_wifi(std::string ssid, std::string password);
 
-public:
     int retries;
 
     int start();
     void stop();
 
     ~WiFiManager();
+
+    int test_connect(const char *ssid, const char *password);
 
     int connect(const char *ssid, const char *password);
     int connect();
@@ -90,4 +105,5 @@ public:
 
 extern WiFiManager fnWiFi;
 
+#endif // ESP_PLATFORM
 #endif // FNWIFI_H

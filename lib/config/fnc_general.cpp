@@ -1,6 +1,10 @@
 #include "fnConfig.h"
 #include <cstring>
 #include "utils.h"
+#ifndef ESP_PLATFORM
+#include "fnSystem.h"
+#endif
+
 #include "../../include/debug.h"
 
 void fnConfig::store_general_devicename(const char *devicename)
@@ -38,6 +42,27 @@ void fnConfig::store_general_config_enabled(bool config_enabled)
     _general.config_enabled = config_enabled;
     _dirty = true;
 }
+
+// Saves config-ng boot setting
+void fnConfig::store_general_config_ng(bool config_ng)
+{
+    if (_general.config_ng == config_ng)
+        return;
+
+    _general.config_ng = config_ng;
+    _dirty = true;
+}
+
+// Saves alternative config boot disk filename
+void fnConfig::store_config_filename(const std::string &filename)
+{
+    if (_general.config_filename == filename)
+        return;
+
+    _general.config_filename = filename;
+    _dirty = true;
+}
+
 void fnConfig::store_general_status_wait_enabled(bool status_wait_enabled)
 {
     if (_general.status_wait_enabled == status_wait_enabled)
@@ -46,6 +71,7 @@ void fnConfig::store_general_status_wait_enabled(bool status_wait_enabled)
     _general.status_wait_enabled = status_wait_enabled;
     _dirty = true;
 }
+
 void fnConfig::store_general_encrypt_passphrase(bool encrypt_passphrase)
 {
     if (_general.encrypt_passphrase == encrypt_passphrase)
@@ -65,17 +91,19 @@ void fnConfig::store_general_encrypt_passphrase(bool encrypt_passphrase)
     }
 
     _dirty = true;
-    
+
 }
+
 bool fnConfig::get_general_encrypt_passphrase()
 {
     return _general.encrypt_passphrase;
 }
+
 void fnConfig::store_general_boot_mode(uint8_t boot_mode)
 {
     if (_general.boot_mode == boot_mode)
         return;
-    
+
     _general.boot_mode = boot_mode;
     _dirty = true;
 }
@@ -97,6 +125,46 @@ void fnConfig::store_general_fnconfig_spifs(bool fnconfig_spifs)
     _general.fnconfig_spifs = fnconfig_spifs;
     _dirty = true;
 }
+
+#ifndef ESP_PLATFORM
+std::string fnConfig::get_general_label()
+{
+    // TODO html escape - label goes into <title>
+    if (_general.devicename.empty())
+        return fnSystem.Net.get_hostname();
+    return _general.devicename; 
+}
+
+void fnConfig::store_general_interface_url(const char *url)
+{
+    if (_general.interface_url.compare(url) == 0)
+        return;
+
+    _general.interface_url = url;
+    // this option is not stored in config file
+    // _dirty = true;
+}
+
+void fnConfig::store_general_config_path(const char *file_path)
+{
+    if (_general.config_file_path.compare(file_path) == 0)
+        return;
+
+    _general.config_file_path = file_path;
+    // this option is not stored in config file
+    // _dirty = true;
+}
+
+void fnConfig::store_general_SD_path(const char *dir_path)
+{
+    if (_general.SD_dir_path.compare(dir_path) == 0)
+        return;
+
+    _general.SD_dir_path = dir_path;
+    // this option is not stored in config file
+    // _dirty = true;
+}
+#endif
 
 // Saves ENABLE or DISABLE printer
 void fnConfig::store_printer_enabled(bool printer_enabled)
@@ -125,7 +193,11 @@ void fnConfig::_read_section_general(std::stringstream &ss)
             else if (strcasecmp(name.c_str(), "hsioindex") == 0)
             {
                 int index = atoi(value.c_str());
+#ifdef ESP_PLATFORM
                 if (index >= 0 && index < 10)
+#else
+                if (index >= -1 && index <= 10 || index == 16) // accepted values: -1(HSIO disabled),0..10,16
+#endif
                     _general.hsio_index = index;
             }
             else if (strcasecmp(name.c_str(), "timezone") == 0)
@@ -139,6 +211,14 @@ void fnConfig::_read_section_general(std::stringstream &ss)
             else if (strcasecmp(name.c_str(), "configenabled") == 0)
             {
                 _general.config_enabled = util_string_value_is_true(value);
+            }
+            else if (strcasecmp(name.c_str(), "config_ng") == 0)
+            {
+                _general.config_ng = util_string_value_is_true(value);
+            }
+            else if (strcasecmp(name.c_str(), "altconfigfile") == 0)
+            {
+                _general.config_filename = value;
             }
             else if (strcasecmp(name.c_str(), "boot_mode") == 0)
             {

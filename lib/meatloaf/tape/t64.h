@@ -7,19 +7,19 @@
 #ifndef MEATLOAF_MEDIA_T64
 #define MEATLOAF_MEDIA_T64
 
-#include "meat_io.h"
-#include "cbm_media.h"
+#include "../meatloaf.h"
+#include "../meat_media.h"
 
 
 /********************************************************
  * Streams
  ********************************************************/
 
-class T64IStream : public CBMImageStream {
+class T64MStream : public MMediaStream {
     // override everything that requires overriding here
 
 public:
-    T64IStream(std::shared_ptr<MStream> is) : CBMImageStream(is) { };
+    T64MStream(std::shared_ptr<MStream> is) : MMediaStream(is) { };
 
 protected:
     struct Header {
@@ -37,26 +37,28 @@ protected:
         char filename[16];
     };
 
-    void seekHeader() override {
+    bool readHeader() override {
         containerStream->seek(0x28);
-        containerStream->read((uint8_t*)&header, 24);
-    }
-
-    bool seekNextImageEntry() override {
-        return seekEntry(entry_index + 1);
+        if (containerStream->read((uint8_t*)&header, 24))
+            return true;
+        
+        return false;
     }
 
     bool seekEntry( std::string filename ) override;
-    bool seekEntry( size_t index ) override;
+    bool seekEntry( uint16_t index ) override;
 
-    size_t readFile(uint8_t* buf, size_t size) override;
+    uint32_t readFile(uint8_t* buf, uint32_t size) override;
+    uint32_t writeFile(uint8_t* buf, uint32_t size) override { return 0; };
     bool seekPath(std::string path) override;
 
     Header header;
     Entry entry;
 
+    std::string decodeType(uint8_t file_type, bool show_hidden = false) override;
+
 private:
-    friend class T64File;
+    friend class T64MFile;
 };
 
 
@@ -64,26 +66,25 @@ private:
  * File implementations
  ********************************************************/
 
-class T64File: public MFile {
+class T64MFile: public MFile {
 public:
 
-    T64File(std::string path, bool is_dir = true): MFile(path) {
+    T64MFile(std::string path, bool is_dir = true): MFile(path) {
         isDir = is_dir;
 
         media_image = name;
-        mstr::toASCII(media_image);
+        isPETSCII = true;
     };
     
-    ~T64File() {
+    ~T64MFile() {
         // don't close the stream here! It will be used by shared ptr D64Util to keep reading image params
     }
 
-    MStream* createIStream(std::shared_ptr<MStream> containerIstream) override;
+    MStream* getDecodedStream(std::shared_ptr<MStream> containerIstream) override
+    {
+        Debug_printv("[%s]", url.c_str());
 
-    std::string petsciiName() override {
-        // It's already in PETSCII
-        mstr::replaceAll(name, "\\", "/");
-        return name;
+        return new T64MStream(containerIstream);
     }
 
     bool isDirectory() override;
@@ -93,10 +94,9 @@ public:
 
     bool exists() override { return true; };
     bool remove() override { return false; };
-    bool rename(std::string dest) { return false; };
+    bool rename(std::string dest) override { return false; };
     time_t getLastWrite() override { return 0; };
     time_t getCreationTime() override { return 0; };
-    uint32_t size() override;
 
     bool isDir = true;
     bool dirIsOpen = false;
@@ -108,18 +108,18 @@ public:
  * FS
  ********************************************************/
 
-class T64FileSystem: public MFileSystem
+class T64MFileSystem: public MFileSystem
 {
 public:
     MFile* getFile(std::string path) override {
-        return new T64File(path);
+        return new T64MFile(path);
     }
 
-    bool handles(std::string fileName) {
+    bool handles(std::string fileName) override {
         return byExtension(".t64", fileName);
     }
 
-    T64FileSystem(): MFileSystem("t64") {};
+    T64MFileSystem(): MFileSystem("t64") {};
 };
 
 

@@ -3,6 +3,8 @@
 #include "diskTypeXex.h"
 
 #include <cstring>
+#include <stdlib.h>
+#include <memory.h>
 
 #include "../../include/debug.h"
 
@@ -174,13 +176,13 @@ bool MediaTypeXEX::read(uint16_t sectornum, uint16_t *readcount)
     if (sectornum != _disk_last_sector + 1)
     {
         Debug_printf("seeking to offset %d in XEX\r\n", xex_offset);
-        err = fseek(_disk_fileh, xex_offset, SEEK_SET) != 0;
+        err = fnio::fseek(_disk_fileh, xex_offset, SEEK_SET) != 0;
     }
 
     if (err == false)
     {
         Debug_printf("requesting %d bytes from XEX\r\n", data_bytes);
-        int read = fread(_disk_sectorbuff, 1, data_bytes, _disk_fileh);
+        int read = fnio::fread(_disk_sectorbuff, 1, data_bytes, _disk_fileh);
         Debug_printf("received %d bytes\r\n", read);
 
         // Fill in the sector link data pointing to the next sector
@@ -216,9 +218,6 @@ void MediaTypeXEX::status(uint8_t statusbuff[4])
 
 void MediaTypeXEX::unmount()
 {
-    if (_xex_bootloader != nullptr)
-        free(_xex_bootloader);
-
     // Call the parent unmount
     this->MediaType::unmount();
 }
@@ -228,14 +227,14 @@ MediaTypeXEX::~MediaTypeXEX()
     unmount();
 }
 
-mediatype_t MediaTypeXEX::mount(FILE *f, uint32_t disksize)
+mediatype_t MediaTypeXEX::mount(fnFile *f, uint32_t disksize)
 {
     Debug_print("XEX MOUNT\r\n");
 
     _disktype = MEDIATYPE_UNKNOWN;
 
     // Load our bootloader
-    _xex_bootloadersize = fnSystem.load_firmware(BOOTLOADER, &_xex_bootloader);
+    _xex_bootloadersize = fnSystem.load_firmware(BOOTLOADER, &_xex_bootloader[0]);
     if (_xex_bootloadersize < 0)
     {
         Debug_printf("failed to load bootloader \"%s\"\r\n", BOOTLOADER);
@@ -256,8 +255,8 @@ mediatype_t MediaTypeXEX::mount(FILE *f, uint32_t disksize)
     if (_disk_num_sectors < 720)
         _disk_num_sectors = 720;
 
-    Debug_printf("mounted XEX with %d-byte bootloader; XEX size=%d\r\n", _xex_bootloadersize, _disk_image_size);
-    Debug_printf("disk sectors = %d\r\n", _disk_num_sectors);
+    Debug_printf("mounted XEX with %d-byte bootloader; XEX size=%lu\r\n", _xex_bootloadersize, _disk_image_size);
+    Debug_printf("disk sectors = %lu\r\n", _disk_num_sectors);
 
     return _disktype;
 }

@@ -1,19 +1,30 @@
 #ifdef BUILD_APPLE
+
+#include <array>
+#include <cstdint>
+#include <string>
+#include <vector>
+
 #include "iwm.h"
 #include "fnSystem.h"
+
+#ifdef ESP_PLATFORM
 #include "fnHardwareTimer.h"
-// #include "fnFsTNFS.h" // do i need this?
+#endif
+
 #include <string.h>
-// #include "driver/timer.h" // contains the hardware timer register data structure
 #include "../../include/debug.h"
 #include "utils.h"
 #include "led.h"
+#include "string_utils.h"
 
 #include "../device/iwm/disk.h"
 #include "../device/iwm/disk2.h"
 #include "../device/iwm/fuji.h"
 #include "../device/iwm/cpm.h"
 #include "../device/iwm/clock.h"
+
+#include "compat_esp.h" // empty IRAM_ATTR macro for FujiNet-PC
 
 /******************************************************************************
 Based on:
@@ -47,52 +58,25 @@ https://www.bigmessowires.com/2015/04/09/more-fun-with-apple-iigs-disks/
 //*****************************************************************************
 void print_packet(uint8_t *data, int bytes)
 {
-  int row;
-  char tbs[12];
-  char xx;
-
-  Debug_printf(("\n"));
-  for (int count = 0; count < bytes; count = count + 16)
-  {
-    sprintf(tbs, ("%04X: "), count);
-    Debug_print(tbs);
-    for (row = 0; row < 16; row++)
-    {
-      if (count + row >= bytes)
-        Debug_print(("   "));
-      else
-      {
-        Debug_printf("%02x ", data[count + row]);
-      }
-    }
-    Debug_print(("-"));
-    for (row = 0; row < 16; row++)
-    {
-      if ((data[count + row] > 31) && (count + row < bytes) && (data[count + row] < 128))
-      {
-        xx = data[count + row];
-        Debug_printf("%c", xx);
-      }
-      else
-      {
-        Debug_print(("."));
-      }
-    }
-    Debug_printf(("\n"));
-  }
+  // int print_len = bytes;
+  // if (print_len > 16) print_len = 16;
+  // std::string msg = util_hexdump(data, print_len);
+  // Debug_printf("\nsize: %d\n%s\n", bytes, msg.c_str());
+  // if (print_len != bytes) {
+  //   Debug_printf("... truncated");
+  // }
 }
 
 void print_packet(uint8_t *data)
 {
   Debug_printf("\n");
-  for (int i = 0; i < 40; i++)
-  {
-    if (data[i] != 0 || i == 0)
-      Debug_printf("%02x ", data[i]);
-    else
-      break;
-  }
-  // Debug_printf("\r\n");
+#ifdef DEV_RELAY_SLIP
+  for (int i = 0; i < COMMAND_LEN; i++)
+    Debug_printf("%02x ", data[i]);
+  Debug_printf("\r\n");
+#else
+  // Debug_printf("packet: %s\r\n", mstr::toHex(data, 16).c_str());
+#endif
 }
 
 void print_packet_wave(uint8_t *data, int bytes)
@@ -100,15 +84,15 @@ void print_packet_wave(uint8_t *data, int bytes)
   int row;
   char tbs[12];
 
-  Debug_printf(("\n"));
+  Debug_printf("\n");
   for (int count = 0; count < bytes; count = count + 12)
   {
-    sprintf(tbs, ("%04X: "), count);
+    snprintf(tbs, sizeof(tbs), "%04X: ", count);
     Debug_print(tbs);
     for (row = 0; row < 12; row++)
     {
       if (count + row >= bytes)
-        Debug_print(("         "));
+        Debug_print("         ");
       else
       {
         uint8_t b = data[count + row];
@@ -127,15 +111,11 @@ void print_packet_wave(uint8_t *data, int bytes)
         Debug_print(".");
       }
     }
-    Debug_printf(("\r\n"));
+    Debug_printf("\r\n");
   }
 }
 
 //------------------------------------------------------------------------------
-
-// uint8_t iwmDevice::packet_buffer[BLOCK_PACKET_LEN] = { 0 };
-// uint16_t iwmDevice::packet_len = 0;
-// uint16_t iwmDevice::num_decoded = 0;
 
 uint8_t iwmDevice::data_buffer[MAX_DATA_LEN] = {0};
 int iwmDevice::data_len = 0;
@@ -151,6 +131,7 @@ void iwmBus::iwm_ack_assert()
   smartport.spi_end();
 }
 
+#ifndef DEV_RELAY_SLIP
 bool iwmBus::iwm_phase_val(uint8_t p)
 {
   uint8_t phases = _phases; // smartport.iwm_phase_vector();
@@ -159,6 +140,7 @@ bool iwmBus::iwm_phase_val(uint8_t p)
   Debug_printf("\r\nphase number out of range");
   return false;
 }
+#endif
 
 iwmBus::iwm_phases_t iwmBus::iwm_phases()
 {
@@ -219,7 +201,7 @@ int iwmBus::iwm_send_packet(uint8_t source, iwm_packet_type_t packet_type, uint8
   {
     r = smartport.iwm_send_packet_spi();
     retry--;
-  } while (r && retry); // retry if we get an error and haven't tried to many times
+  } while (r && retry); // retry if we get an error and haven't tried too many times
 
   return r;
 }
@@ -229,57 +211,18 @@ bool iwmBus::iwm_decode_data_packet(uint8_t *data, int &n)
   n = smartport.decode_data_packet(data);
   return false;
 }
-/*
- {
-  memset(data, 0, n);
-  int nn = 17 + n % 7 + (n % 7 != 0) + n * 8 / 7;
-  Debug_printf("\r\nAttempting to receive %d length packet", nn);
-  portDISABLE_INTERRUPTS();
-  iwm_ack_deassert();
-  for (int i = 0; i < attempts; i++)
-  {
-    int error = smartport.iwm_read_packet_spi(nn);
-    if (!error)
-    {
-      iwm_ack_assert();
-      portENABLE_INTERRUPTS();
-#ifdef DEBUG
-      //if (smartport.packet_buffer[8] == 0x82) // packet type    // limit debug packet print if needed to data packets
-      //  print_packet(smartport.packet_buffer,BLOCK_PACKET_LEN); // print raw received packet contents
-#endif
-      n = smartport.decode_data_packet(data);
-      return false;
-    }
-    else if (error == 2) // checksum nok
-    {
-      smartport.spi_end(); // when this ends, we might be in the middle of receiving the next resent packet
-      portENABLE_INTERRUPTS();
-      Debug_printf("\r\nChksum error, calc %02x, pkt %02x", smartport.calc_checksum, smartport.pkt_checksum);
-#ifdef DEBUG
-      //print_packet(smartport.packet_buffer,BLOCK_PACKET_LEN);  // print raw received packet contents
-#endif
-      portDISABLE_INTERRUPTS();
-      smartport.req_wait_for_falling_timeout(1000000); // wait up to 100ms to catch REQ going low and line up with end of the resent packet
-    } // if
-  }
-#ifdef DEBUG
-  Debug_printf("\r\nERROR: Read Packet tries exceeds %d attempts", attempts);
-  // print_packet(data);
-#endif
-  portENABLE_INTERRUPTS();
-  return true;
-}
-*/
 
 void iwmBus::setup(void)
 {
-  Debug_printf(("\r\nIWM FujiNet based on SmartportSD v1.15\r\n"));
+  Debug_printf("\r\nIWM FujiNet based on SmartportSD v1.15\r\n");
 
+#ifndef DEV_RELAY_SLIP
   fnTimer.config();
   Debug_printf("\r\nFujiNet Hardware timer started");
 
   diskii_xface.setup_rmt();
   Debug_printf("\r\nRMT configured for Disk ][ Output");
+#endif
 
   smartport.setup_spi();
   Debug_printf("\r\nSPI configured for smartport I/O");
@@ -287,16 +230,6 @@ void iwmBus::setup(void)
   smartport.setup_gpio();
   Debug_printf("\r\nIWM GPIO configured");
   }
-
-//*****************************************************************************
-// Function: encode_data_packet
-// Parameters: source id
-// Returns: none
-//
-// Description: encode 512 byte data packet for read block command from host
-// requires the data to be in the packet buffer, and builds the smartport
-// packet IN PLACE in the packet buffer
-//*****************************************************************************
 
 //*****************************************************************************
 // Function: send_init_reply_packet
@@ -322,28 +255,26 @@ void iwmDevice::send_reply_packet(uint8_t status)
 void iwmDevice::iwm_return_badcmd(iwm_decoded_cmd_t cmd)
 {
   //Handle possible data packet to avoid crash extended and non-extended
-  switch(cmd.command) {
-    case 0x42:
-    case 0x44:
-    case 0x49:
-    case 0x4a:
-    case 0x4b:
-    case 0x02:
-    case 0x04:
-    case 0x09:
-    case 0x0a:
-    case 0x0b:
-    data_len = 512;
-    IWM.iwm_decode_data_packet((uint8_t *)data_buffer, data_len);
-    Debug_printf("\r\nUnit %02x Bad Command with data packet %02x\r\n", id(), cmd.command);
-    print_packet((uint8_t *)data_buffer, data_len);
-    break;
-    default://just send the response and return like before
+  switch(cmd.command)
+  {
+    case SP_ECMD_WRITEBLOCK:
+    case SP_ECMD_CONTROL:
+    case SP_ECMD_WRITE:
+    case SP_CMD_WRITEBLOCK:
+    case SP_CMD_CONTROL:
+    case SP_CMD_WRITE:
+      data_len = 512;
+      IWM.iwm_decode_data_packet((uint8_t *)data_buffer, data_len);
+      Debug_printf("\r\nUnit %02x Bad Command with data packet %02x\r\n", id(), cmd.command);
+      print_packet((uint8_t *)data_buffer, data_len);
+      break;
+    default: //just send the response and return like before
       send_reply_packet(SP_ERR_BADCMD);
       Debug_printf("\r\nUnit %02x Bad Command %02x", id(), cmd.command);
       return;
   }
-  if(cmd.command == 0x04) //Decode command control code
+
+  if(cmd.command == SP_CMD_CONTROL) //Decode command control code
   {
     send_reply_packet(SP_ERR_BADCTL); //we may be required to accept some control commands
                                       // but for now just report bad control if it's a control
@@ -351,8 +282,43 @@ void iwmDevice::iwm_return_badcmd(iwm_decoded_cmd_t cmd)
     uint8_t control_code = get_status_code(cmd);
     Debug_printf("\r\nbad command was a control command with control code %02x",control_code);
   }
-  else{
+  else
+  {
     send_reply_packet(SP_ERR_BADCMD); //response for Any other command with a data packet
+  }
+}
+
+void iwmDevice::iwm_return_device_offline(iwm_decoded_cmd_t cmd)
+{
+  //Handle possible data packet to avoid crash extended and non-extended
+  switch(cmd.command)
+  {
+    case SP_ECMD_WRITEBLOCK:
+    case SP_ECMD_CONTROL:
+    case SP_ECMD_WRITE:
+    case SP_CMD_WRITEBLOCK:
+    case SP_CMD_CONTROL:
+    case SP_CMD_WRITE:
+      data_len = 512;
+      IWM.iwm_decode_data_packet((uint8_t *)data_buffer, data_len);
+      Debug_printf("\r\nUnit %02x Offline, Command with data packet %02x\r\n", id(), cmd.command);
+      print_packet((uint8_t *)data_buffer, data_len);
+      break;
+    default: //just send the response and return like before
+      send_reply_packet(SP_ERR_OFFLINE);
+      Debug_printf("\r\nUnit %02x Offline, Command %02x", id(), cmd.command);
+      return;
+  }
+
+  if(cmd.command == SP_CMD_CONTROL) //Decode command control code
+  {
+    send_reply_packet(SP_ERR_OFFLINE);
+    uint8_t control_code = get_status_code(cmd);
+    Debug_printf("\r\nOffline command was a control command with control code %02x",control_code);
+  }
+  else
+  {
+    send_reply_packet(SP_ERR_OFFLINE); //response for Any other command with a data packet
   }
 }
 
@@ -369,21 +335,48 @@ void iwmDevice::iwm_return_noerror()
 
 void iwmDevice::iwm_status(iwm_decoded_cmd_t cmd) // override;
 {
-  uint8_t status_code = cmd.params[2]; // cmd.g7byte3 & 0x7f; // (packet_buffer[19] & 0x7f); // | (((unsigned short)packet_buffer[16] << 3) & 0x80);
-  Debug_printf("\r\nTarget Device: %02x", id());
-  // add a switch case statement for ALL THE STATUSESESESESS
-  if (status_code == 0x03)
-  { // if statcode=3, then status with device info block
-    Debug_printf("\r\n******** Sending DIB! ********");
+  uint8_t status_code = cmd.params[2];
+
+  if (status_code == SP_CMD_FORMAT)
+  {
+    Debug_printf("\r\nSending DIB Status for device 0x%02x", id());
     send_status_dib_reply_packet();
-    // print_packet ((unsigned char*) packet_buffer,get_packet_length());
-    // fnSystem.delay(50);
   }
   else
-  { // else just return device status
-    Debug_printf("\r\nSending Status");
+  {
+    Debug_printf("\r\nSending Device Status for device 0x%02x", id());
     send_status_reply_packet();
   }
+}
+
+// Create a vector from the input for the various send_status_dib_reply_packet routines to call
+// data[0]                = status
+// data[1..1+block_size]  = block bytes - 3 bytes except in some unused code!!
+// data[..1 byte ]        = name real size
+// data[..16 bytes ]      = name padded with spaces to 16 bytes
+// data[..2 bytes]        = device type
+// data[..2 byte]         = device version
+std::vector<uint8_t> iwmDevice::create_dib_reply_packet(const std::string& device_name, uint8_t status, const std::vector<uint8_t>& block_size, const std::array<uint8_t, 2>& type, const std::array<uint8_t, 2>& version)
+{
+    std::vector<uint8_t> data;
+    data.push_back(status);
+    data.insert(data.end(), block_size.begin(), block_size.end());
+    data.push_back(static_cast<uint8_t>(device_name.size()));
+
+    data.insert(data.end(), device_name.begin(), device_name.end());
+    size_t padding_size = 16 - device_name.size();
+    for (int i = 0; i < padding_size; i++) {
+      data.push_back(' ');
+    }
+
+    data.insert(data.end(), type.begin(), type.end());
+    data.insert(data.end(), version.begin(), version.end());
+
+    // std::string ddump = util_hexdump(data.data(), data.size());
+    // Debug_printv("DIB DATA");
+    // Debug_printf("%s\r\n", ddump.c_str());
+
+    return data;
 }
 
 //*****************************************************************************
@@ -439,49 +432,75 @@ void iwmDevice::iwm_status(iwm_decoded_cmd_t cmd) // override;
 //*****************************************************************************
 void IRAM_ATTR iwmBus::service()
 {
+#ifndef DEV_RELAY_SLIP
   // process smartport before diskII
+  if (!serviceSmartPort())
+    serviceDiskII();
+
+  serviceDiskIIWrite();
+#else
+  serviceSmartPort();
+#endif
+}
+
+// Returns true if SmartPort was handled
+bool IRAM_ATTR iwmBus::serviceSmartPort()
+{
   // read phase lines to check for smartport reset or enable
   switch (iwm_phases())
   {
   case iwm_phases_t::idle:
-    break;
+    return false;
+
   case iwm_phases_t::reset:
-    Debug_printf(("\r\nReset"));
+    Debug_printf("\r\nReset");
 
     // clear all the device addresses
     for (auto devicep : _daisyChain)
       devicep->_devnum = 0;
 
+#ifndef DEV_RELAY_SLIP
     while (iwm_phases() == iwm_phases_t::reset)
       portYIELD(); // no timeout needed because the IWM must eventually clear reset.
     // even if it doesn't, we would just come back to here, so might as
     // well wait until reset clears.
 
-    Debug_printf(("\r\nReset Cleared"));
+    Debug_printf("\r\nReset Cleared");
 
     // if /EN35 is high, we must be on a host that supports 3.5 dumb drives
     // lets sample it here in case the host is not on when the FN is powered on/reset
-    (GPIO.in1.val & (0x01 << (SP_EN35 - 32))) ? en35Host = true : en35Host = false;
+    IWM_BIT(SP_EN35) ? en35Host = true : en35Host = false;
     Debug_printf("\r\nen35Host = %d",en35Host);
+#endif /* !SLIP */
 
     break;
+
   case iwm_phases_t::enable:
     // expect a command packet
     // should not ACK unless we know this is our Command
 
+    // force floppy off when SP bus is enabled, needed for softsp
+    if (_old_enable_state != iwm_enable_state_t::off)
+    {
+      _old_enable_state = iwm_enable_state_t::off;
+#ifndef DEV_RELAY_SLIP
+      diskii_xface.stop();
+#endif /* !SLIP */
+    }
+
     if (sp_command_mode != sp_cmd_state_t::command)
     {
       // iwm_ack_deassert(); // go hi-Z
-      return;
+      return true;
     }
 
-    if (command_packet.command == 0x85)
+    if ((command_packet.command & 0x7f) == 0x05)
     {
       // wait for REQ to go low
       if (iwm_req_deassert_timeout(50000))
       {
         // iwm_ack_deassert(); // go hi-Z
-        return;
+        return true;
       }
 
 #ifdef DEBUG
@@ -494,6 +513,7 @@ void IRAM_ATTR iwmBus::service()
     {
       for (auto devicep : _daisyChain)
       {
+        // This could be a map of _devnum to devicep, then wouldn't have to loop.
         if (command_packet.dest == devicep->_devnum)
         {
           // wait for REQ to go low
@@ -501,12 +521,14 @@ void IRAM_ATTR iwmBus::service()
           {
             Debug_printf("\nREQ timeout in command processing");
             iwm_ack_deassert(); // go hi-Z
-            return;
+            return true;
           }
+#ifndef DEV_RELAY_SLIP
           // need to take time here to service other ESP processes so they can catch up
           taskYIELD(); // Allow other tasks to run
-          Debug_printf("\nCommand Packet:");
-          print_packet(command_packet.data);
+#endif
+          // Debug_printf("\r\nCommand Packet:");
+          // print_packet(command_packet.data);
 
           _activeDev = devicep;
           // handle command
@@ -514,6 +536,7 @@ void IRAM_ATTR iwmBus::service()
           smartport.decode_data_packet(command_packet.data, command.decoded);
           print_packet(command.decoded, 9);
           _activeDev->process(command);
+          break; // we don't need to needlessly keep looping once we find it
         }
       }
     }
@@ -524,20 +547,30 @@ void IRAM_ATTR iwmBus::service()
     iwm_ack_deassert(); // go hi-Z
   }                     // switch (phasestate)
 
+  return true;
+}
+
+#ifndef DEV_RELAY_SLIP
+// Returns true if Disk II was handled
+bool IRAM_ATTR iwmBus::serviceDiskII()
+{
   // check on the diskii status
-  switch (iwm_drive_enabled())
+  switch (iwm_motor_state())
   {
   case iwm_enable_state_t::off:
-    break;
+    return false;
+
   case iwm_enable_state_t::off2on:
     // need to start a counter and wait to turn on enable output after 1 ms only iff enable state is on
-    if (theFuji._fnDisk2s[diskii_xface.iwm_enable_states() - 1].device_active)
+    if (IWM_ACTIVE_DISK2->device_active)
     {
       fnSystem.delay(1); // need a better way to figure out persistence
-      if (iwm_drive_enabled() == iwm_enable_state_t::on)
+      if (iwm_motor_state() == iwm_enable_state_t::on)
       {
-        theFuji._fnDisk2s[diskii_xface.iwm_enable_states() - 1].change_track(0); // copy current track in for this drive
-        diskii_xface.start(diskii_xface.iwm_enable_states() - 1); // start it up
+        current_disk2 = diskii_xface.iwm_active_drive();
+        IWM_ACTIVE_DISK2->change_track(0); // copy current track in for this drive
+        diskii_xface.start(diskii_xface.iwm_active_drive() - 1,
+                           IWM_ACTIVE_DISK2->readonly); // start it up
       }
     } // make a call to start the RMT stream
     else
@@ -546,30 +579,135 @@ void IRAM_ATTR iwmBus::service()
       // alternative approach is to enable RMT to spit out PRN bits
     }
     // make sure the state machine moves on to iwm_enable_state_t::on
-    return; // return so the SP code doesn't get checked
+    break;
+
   case iwm_enable_state_t::on:
+    if (current_disk2 != diskii_xface.iwm_active_drive())
+    {
+      current_disk2 = diskii_xface.iwm_active_drive();
+      if (IWM_ACTIVE_DISK2->device_active) {
+        IWM_ACTIVE_DISK2->change_track(0); // copy current track in for this drive
+        diskii_xface.start(diskii_xface.iwm_active_drive() - 1,
+                           IWM_ACTIVE_DISK2->readonly); // start it up
+      }
+    }
+    diskii_xface.d2_enable_seen |= diskii_xface.iwm_active_drive();
 #ifdef DEBUG
-    new_track = theFuji._fnDisk2s[diskii_xface.iwm_enable_states() - 1].get_track_pos();
+    new_track = IWM_ACTIVE_DISK2->get_track_pos();
     if (old_track != new_track)
     {
-      Debug_printf("\ntrk pos %03d on d%d", new_track, diskii_xface.iwm_enable_states());
+      Debug_printf("\ntrk pos %02i.%i/Q%03d on d%d",
+                   new_track / 4, new_track % 4,
+                   new_track, diskii_xface.iwm_active_drive());
       old_track = new_track;
     }
 #endif
-    return;
+    break;
+
   case iwm_enable_state_t::on2off:
     fnSystem.delay(1); // need a better way to figure out persistence
     diskii_xface.stop();
     iwm_ack_deassert();
-    return;
+    break;
   }
 
+  return true;
 }
 
-iwm_enable_state_t IRAM_ATTR iwmBus::iwm_drive_enabled()
+// Returns true if a Disk II write was received
+bool IRAM_ATTR iwmBus::serviceDiskIIWrite()
+{
+  iwm_write_data item;
+  int sector_num;
+  uint8_t *decoded;
+  size_t decode_len;
+  size_t sector_start, sector_end;
+  bool found_start, found_end;
+  size_t bitlen, used;
+
+
+  if (!xQueueReceive(diskii_xface.iwm_write_queue, &item, 0))
+    return false;
+
+  Debug_printf("\r\nDisk II iwm queue receive %u %u %u %u",
+	       item.length, item.track_begin, item.track_end, item.track_numbits);
+  // gap 1            = 16 * 10
+  // sector header    = 10 * 8          [D5 AA 96] + 4 + [DE AA EB]
+  // gap 2            = 7 * 10
+  // sector data      = (6 + 343) * 8   [D5 AA AD] + 343 + [DE AA EB]
+  // gap 3            = 16 * 10
+  // per sector bits  = 3102
+
+  // Take advantage of fixed sector positions of mediaTypeDSK serialise_track()
+  // (as listed above)
+  sector_num = (item.track_begin - 16 * 10) / 3102;
+
+  bitlen = (item.track_end + item.track_numbits - item.track_begin) % item.track_numbits;
+  Debug_printf("\r\nDisk II write Qtrack/sector: %i/%i  bit_len: %i",
+	       item.quarter_track, sector_num, bitlen);
+  if (bitlen) {
+    decoded = (uint8_t *) malloc(item.length);
+    decode_len = diskii_xface.iwm_decode_buffer(item.buffer, item.length,
+                                                smartport.f_spirx, D2W_CHUNK_SIZE * 2 * 8,
+                                                decoded, &used);
+    Debug_printf("\r\nDisk II used: %u %lx", used, decoded);
+
+    // Find start of sector: D5 AA AD
+    for (sector_start = 0; decode_len > 349 && sector_start <= decode_len - 349; sector_start++)
+      if (decoded[sector_start]      == 0xD5
+          && decoded[sector_start+1] == 0xAA
+          && decoded[sector_start+2] == 0xAD)
+        break;
+    found_start = sector_start <= decode_len - 349;
+
+    // Find end of sector too: DE AA EB
+    for (sector_end = 0; decode_len > 3 && sector_end <= decode_len - 3; sector_end++)
+      if (decoded[sector_end]      == 0xDE
+          && decoded[sector_end+1] == 0xAA
+          && decoded[sector_end+2] == 0xEB)
+        break;
+    found_end = sector_end <= decode_len - 3;
+
+    if (!found_start && found_end) {
+      Debug_printf("\r\nDisk II no prologue found");
+#if 0
+      sector_start = sector_end - 346;
+      found_start = true;
+#endif
+    }
+
+    if (found_start && found_end && sector_end - sector_start == 346) {
+      uint8_t sector_data[343]; // Need enough room to demap and de-xor
+      uint16_t checksum;
+
+      // This printf nudges timing too much
+      // Debug_printf("\r\nDisk II sector data: %i", sector_start + 3);
+      checksum = decode_6_and_2(sector_data, &decoded[sector_start + 3]);
+      if ((checksum >> 8) != (checksum & 0xff))
+        Debug_printf("\r\nDisk II checksum mismatch: %04x", checksum);
+
+      iwmDisk2 *disk_dev = IWM_ACTIVE_DISK2;
+      disk_dev->write_sector(item.quarter_track, sector_num, sector_data);
+      disk_dev->change_track(0);
+    }
+    else {
+      Debug_printf("\r\nDisk II sector not found");
+    }
+
+    // FIXME - is there another sector to decode?
+
+    free(decoded);
+  }
+
+  free(item.buffer);
+
+  return true;
+}
+
+iwm_enable_state_t IRAM_ATTR iwmBus::iwm_motor_state()
 {
   uint8_t phases = smartport.iwm_phase_vector();
-  uint8_t newstate = diskii_xface.iwm_enable_states();
+  uint8_t newstate = diskii_xface.iwm_active_drive();
 
   if (!((phases & 0b1000) && (phases & 0b0010))) // SP bus not enabled
   {
@@ -589,7 +727,7 @@ iwm_enable_state_t IRAM_ATTR iwmBus::iwm_drive_enabled()
       break;
     }
     if (_old_enable_state != _new_enable_state)
-      Debug_printf("\ndisk ii enable states: %02x", newstate);
+      Debug_printf("\ndisk ii [%i] enable states: %02x", newstate, _new_enable_state);
 
     _old_enable_state = _new_enable_state;
 
@@ -600,6 +738,7 @@ iwm_enable_state_t IRAM_ATTR iwmBus::iwm_drive_enabled()
     return iwm_enable_state_t::off;
   }
 }
+#endif /* !DEV_RELAY_SLIP */
 
 void iwmBus::handle_init()
 {
@@ -613,11 +752,6 @@ void iwmBus::handle_init()
   // to do - get the next device in the daisy chain and assign ID
   for (auto it = _daisyChain.begin(); it != _daisyChain.end(); ++it)
   {
-    // tell the Fuji it's device no.
-    if (it == _daisyChain.begin())
-    {
-      theFuji._devnum = command_packet.dest;
-    }
     // assign dev numbers
     pDevice = (*it);
     pDevice->switched = false; //reset switched condition on init
@@ -633,7 +767,7 @@ void iwmBus::handle_init()
 
       // print_packet ((uint8_t*) packet_buffer,get_packet_length());
 
-      Debug_printf(("\r\nDrive: %02x\r\n"), pDevice->id());
+      Debug_printf("\r\nDrive: %02x\r\n", pDevice->id());
       fnLedManager.set(LED_BUS, false);
       return;
     }
@@ -684,10 +818,6 @@ void iwmBus::addDevice(iwmDevice *pDevice, iwm_fujinet_type_t deviceType)
     _modemDev = (iwmModem *)pDevice;
     break;
   case iwm_fujinet_type_t::Network:
-    // todo: work out how to assign different network devices - idea:
-    // include a number in the DIB name, e.g., "NETWORK 1"
-    // and extract that number from the DIB and use it as the index
-    //_netDev[device_id - SIO_DEVICEID_FN_NETWORK] = (iwmNetwork *)pDevice;
     break;
   case iwm_fujinet_type_t::CPM:
     _cpmDev = (iwmCPM *)pDevice;

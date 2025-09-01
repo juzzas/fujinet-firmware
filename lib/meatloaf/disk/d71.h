@@ -1,4 +1,5 @@
-// .D71 - The D71 disk image format
+// .D71 - 1571 disk image format
+//
 // https://vice-emu.sourceforge.io/vice_17.html#SEC373
 // https://ist.uwaterloo.ca/~schepers/formats/D71.TXT
 //
@@ -7,7 +8,7 @@
 #ifndef MEATLOAF_MEDIA_D71
 #define MEATLOAF_MEDIA_D71
 
-#include "meat_io.h"
+#include "../meatloaf.h"
 #include "d64.h"
 
 
@@ -15,11 +16,11 @@
  * Streams
  ********************************************************/
 
-class D71IStream : public D64IStream {
+class D71MStream : public D64MStream {
     // override everything that requires overriding here
 
 public:
-    D71IStream(std::shared_ptr<MStream> is) : D64IStream(is) 
+    D71MStream(std::shared_ptr<MStream> is) : D64MStream(is) 
     {
         // D71 Partition Info
         std::vector<BlockAllocationMap> b = { 
@@ -53,6 +54,7 @@ public:
         partitions.clear();
         partitions.push_back(p);
         sectorsPerTrack = { 17, 18, 19, 21 };
+
         dos_rom = "dos1571";
 
         uint32_t size = containerStream->size();
@@ -67,18 +69,18 @@ public:
         }
     };
 
-	virtual uint8_t speedZone( uint8_t track) override
-	{
+    virtual uint8_t speedZone( uint8_t track) override
+    {
         if ( track < 35 )
 		    return (track < 18) + (track < 25) + (track < 31);
         else
             return (track < 53) + (track < 60) + (track < 66);
-	};
+    };
 
 protected:
 
 private:
-    friend class D71File;
+    friend class D71MFile;
 };
 
 
@@ -86,11 +88,19 @@ private:
  * File implementations
  ********************************************************/
 
-class D71File: public D64File {
+class D71MFile: public D64MFile {
 public:
-    D71File(std::string path, bool is_dir = true) : D64File(path, is_dir) {};
+    D71MFile(std::string path, bool is_dir = true) : D64MFile(path, is_dir) 
+    {
+        size = 349696; // Default - 70 tracks no errors
+    };
 
-    MStream* createIStream(std::shared_ptr<MStream> containerIstream) override;
+    MStream* getDecodedStream(std::shared_ptr<MStream> containerIstream) override
+    {
+        Debug_printv("[%s]", url.c_str());
+
+        return new D71MStream(containerIstream);
+    }
 };
 
 
@@ -99,18 +109,18 @@ public:
  * FS
  ********************************************************/
 
-class D71FileSystem: public MFileSystem
+class D71MFileSystem: public MFileSystem
 {
 public:
     MFile* getFile(std::string path) override {
-        return new D71File(path);
+        return new D71MFile(path);
     }
 
-    bool handles(std::string fileName) {
+    bool handles(std::string fileName) override {
         return byExtension(".d71", fileName);
     }
 
-    D71FileSystem(): MFileSystem("d71") {};
+    D71MFileSystem(): MFileSystem("d71") {};
 };
 
 

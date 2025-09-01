@@ -4,14 +4,45 @@
 
 #include "../../include/debug.h"
 
-#include "bus.h"
-#include "iwm_ll.h"
+// for ESP IWM-SLIP build, DEV_RELAY_SLIP should be defined in platformio.ini
+// for PC IWM-SLIP build DEV_RELAY_SLIP should be defined in fujinet_pc.cmake
 
+#ifdef DEV_RELAY_SLIP
+#include "iwm_slip.h"
+#else
+#include "iwm_ll.h"
+#endif
+
+#include <array>
 #include <cstdint>
 #include <forward_list>
 #include <string>
+#include <vector>
 
 #include "fnFS.h"
+
+enum {
+  SP_CMD_STATUS         = 0x00,
+  SP_CMD_READBLOCK      = 0x01,
+  SP_CMD_WRITEBLOCK     = 0x02,
+  SP_CMD_FORMAT         = 0x03,
+  SP_CMD_CONTROL        = 0x04,
+  SP_CMD_INIT           = 0x05,
+  SP_CMD_OPEN           = 0x06,
+  SP_CMD_CLOSE          = 0x07,
+  SP_CMD_READ           = 0x08,
+  SP_CMD_WRITE          = 0x09,
+  SP_ECMD_STATUS        = 0x40,
+  SP_ECMD_READBLOCK     = 0x41,
+  SP_ECMD_WRITEBLOCK    = 0x42,
+  SP_ECMD_FORMAT        = 0x43,
+  SP_ECMD_CONTROL       = 0x44,
+  SP_ECMD_INIT          = 0x45,
+  SP_ECMD_OPEN          = 0x46,
+  SP_ECMD_CLOSE         = 0x47,
+  SP_ECMD_READ          = 0x48,
+  SP_ECMD_WRITE         = 0x49,
+};
 
 // see page 81-82 in Apple IIc ROM reference and Table 7-5 in IIgs firmware ref
 #define SP_ERR_NOERROR 0x00    // no error
@@ -48,7 +79,7 @@
 #define SP_SUBTYPE_BYTE_REMOVABLE 0x00
 #define SP_SUBTYPE_BYTE_HARDDISK 0x20 // fixed media
 #define SP_SUBTYPE_BYTE_SWITCHED 0x40 // removable and supports disk switched errors
-#define SP_SUBTYPE_BYTE_HARDDISK_EXTENDED 0xA0 
+#define SP_SUBTYPE_BYTE_HARDDISK_EXTENDED 0xA0
 #define SP_SUBTYPE_BYTE_REMOVABLE_EXTENDED 0xC0 // removable and extended and supports disk switched errors
 
 #define SP_TYPE_BYTE_SCSI 0x03
@@ -76,12 +107,14 @@
 #define IWM_CTRL_RUN_ROUTINE 0x05
 #define IWM_CTRL_DWNLD_ADDRESS 0x06
 #define IWM_CTRL_DOWNLOAD 0x07
+#define IWM_CTRL_CLEAR_ENSEEN 0x08
 
 #define IWM_STATUS_STATUS 0x00
 #define IWM_STATUS_DCB 0x01
 #define IWM_STATUS_NEWLINE 0x02
 #define IWM_STATUS_DIB 0x03
 #define IWM_STATUS_UNI35 0x05
+#define IWM_STATUS_ENSEEN 0x08
 
 // class def'ns
 class iwmFuji;     // declare here so can reference it, but define in fuji.h
@@ -111,72 +144,8 @@ union cmdFrame_t
     } __attribute__((packed));
 };
 
-#define COMMAND_PACKET_LEN  27 //28     - max length changes suggested by robj
 #define BLOCK_DATA_LEN      512
 #define MAX_DATA_LEN        767
-#define MAX_SP_PACKET_LEN         891
-// to do - make block packet compatible up to 767 data bytes?
-
-union cmdPacket_t
-{
-/*
-C3 PBEGIN   MARKS BEGINNING OF PACKET 32 micro Sec.
-81 DEST     DESTINATION UNIT NUMBER 32 micro Sec.
-80 SRC      SOURCE UNIT NUMBER 32 micro Sec.
-80 TYPE     PACKET TYPE FIELD 32 micro Sec.
-80 AUX      PACKET AUXILLIARY TYPE FIELD 32 micro Sec.
-80 STAT     DATA STATUS FIELD 32 micro Sec.
-82 ODDCNT   ODD BYTES COUNT 32 micro Sec.
-81 GRP7CNT  GROUP OF 7 BYTES COUNT 32 micro Sec.
-80 ODDMSB   ODD BYTES MSB's 32 micro Sec.
-81 COMMAND  1ST ODD BYTE = Command Byte 32 micro Sec.
-83 PARMCNT  2ND ODD BYTE = Parameter Count 32 micro Sec.
-80 GRP7MSB  MSB's FOR 1ST GROUP OF 7 32 micro Sec.
-80 G7BYTE1  BYTE 1 FOR 1ST GROUP OF 7 32 micro Sec.
-98 G7BYTE2  BYTE 2 FOR 1ST GROUP OF 7 32 micro Sec.
-82 G7BYTE3  BYTE 3 FOR 1ST GROUP OF 7 32 micro Sec.
-80 G7BYTE4  BYTE 4 FOR 1ST GROUP OF 7 32 micro Sec.
-80 G7BYTE5  BYTE 5 FOR 1ST GROUP OF 7 32 micro Sec.
-80 G7BYTE5  BYTE 6 FOR 1ST GROUP OF 7 32 micro Sec.
-80 G7BYTE6  BYTE 7 FOR 1ST GROUP OF 7 32 micro Sec.
-BB CHKSUM1  1ST BYTE OF CHECKSUM 32 micro Sec.
-EE CHKSUM2  2ND BYTE OF CHECKSUM 32 micro Sec.
-C8 PEND     PACKET END BYTE 32 micro Sec.
-00 CLEAR    zero after packet for FujiNet use
-*/
-struct
-{
-  uint8_t sync1;   // 0
-  uint8_t sync2;   // 1
-  uint8_t sync3;   // 2
-  uint8_t sync4;   // 3
-  uint8_t sync5;   // 4
-  uint8_t pbegin;  // 5
-  uint8_t dest;    // 6
-  uint8_t source;  // 7
-  uint8_t type;    // 8
-  uint8_t aux;     // 9
-  uint8_t stat;    // 10
-  uint8_t oddcnt;  // 11
-  uint8_t grp7cnt; // 12
-  uint8_t oddmsb;  // 13
-  uint8_t command; // 14
-  uint8_t parmcnt; // 15
-  uint8_t grp7msb; // 16
-  uint8_t g7byte1; // 17
-  uint8_t g7byte2; // 18
-  uint8_t g7byte3; // 19
-  uint8_t g7byte4; // 20
-  uint8_t g7byte5; // 21
-  uint8_t g7byte6; // 22
-  uint8_t g7byte7; // 23
-  uint8_t chksum1; // 24
-  uint8_t chksum2; // 25
-  uint8_t pend;    // 26
-  uint8_t clear;   // 27
-  };
-  uint8_t data[COMMAND_PACKET_LEN + 1];
-};
 
 union iwm_decoded_cmd_t
 {
@@ -212,8 +181,8 @@ enum class iwm_enable_state_t
 {
   off,
   off2on,
+  on2off,
   on,
-  on2off
 };
 
 struct iwm_device_info_block_t
@@ -252,7 +221,7 @@ protected:
 
   virtual void send_extended_status_reply_packet() = 0;
   virtual void send_extended_status_dib_reply_packet() = 0;
-  
+
   virtual void shutdown() = 0;
   virtual void process(iwm_decoded_cmd_t cmd) = 0;
 
@@ -273,6 +242,7 @@ protected:
   uint32_t get_address(iwm_decoded_cmd_t cmd) { return cmd.params[4] + (cmd.params[5] << 8) + (cmd.params[6] << 16); }
 
   void iwm_return_badcmd(iwm_decoded_cmd_t cmd);
+  void iwm_return_device_offline(iwm_decoded_cmd_t cmd);
   void iwm_return_ioerror();
   void iwm_return_noerror();
 
@@ -280,11 +250,13 @@ protected:
   static uint8_t data_buffer[MAX_DATA_LEN]; // un-encoded binary data (512 bytes for a block)
   static int data_len; // how many bytes in the data buffer
 
+  std::vector<uint8_t> create_dib_reply_packet(const std::string& device_name, uint8_t status, const std::vector<uint8_t>& block_size, const std::array<uint8_t, 2>& type, const std::array<uint8_t, 2>& version);
+
 public:
   bool device_active;
   uint8_t prevtype = SP_TYPE_BYTE_HARDDISK; //preserve previous device type when offline
   bool switched = false; //indicate disk switched condition
-  bool readonly = true;  //write protected 
+  bool readonly = true;  //write protected
   bool is_config_device;
   /**
    * @brief get the IWM device Number (1-255)
@@ -295,7 +267,7 @@ public:
   //void assign_id(uint8_t n) { _devnum = n; };
 
   void assign_name(std::string name) {dib.device_name = name;}
-  
+
   /**
    * @brief Get the iwmBus object that this iwmDevice is attached to.
    */
@@ -312,14 +284,16 @@ private:
 
   iwmFuji *_fujiDev = nullptr;
   iwmModem *_modemDev = nullptr;
-  iwmNetwork *_netDev[4] = {nullptr};
+  // iwmNetwork *_netDev[4] = {nullptr};
   //sioMIDIMaze *_midiDev = nullptr;
   //sioCassette *_cassetteDev = nullptr;
   iwmCPM *_cpmDev = nullptr;
   iwmPrinter *_printerdev = nullptr;
   iwmClock *_clockDev = nullptr;
 
+  #ifndef DEV_RELAY_SLIP
   bool iwm_phase_val(uint8_t p);
+  #endif
 
   enum class iwm_phases_t
   {
@@ -331,8 +305,9 @@ private:
 #ifdef DEBUG
   iwm_phases_t oldphase;
 #endif
+  uint8_t current_disk2 = 0;
 
-  iwm_enable_state_t iwm_drive_enabled();
+  iwm_enable_state_t iwm_motor_state();
   iwm_enable_state_t _old_enable_state;
   iwm_enable_state_t _new_enable_state;
   // uint8_t enable_values;
@@ -344,21 +319,26 @@ private:
 
   iwm_decoded_cmd_t command;
 
-  void handle_init(); 
+  void handle_init();
 
   int old_track = -1;
-  int new_track;
+  int new_track = -1;
 
 public:
   std::forward_list<iwmDevice *> _daisyChain;
-  
+
   cmdPacket_t command_packet;
   bool iwm_decode_data_packet(uint8_t *a, int &n);
    int iwm_send_packet(uint8_t source, iwm_packet_type_t packet_type, uint8_t status, const uint8_t* data, uint16_t num);
- 
+
   // these things stay for the most part
   void setup();
   void service();
+  bool serviceSmartPort();
+  bool serviceDiskII();
+#ifndef DEV_RELAY_SLIP
+  bool serviceDiskIIWrite();
+#endif
   void shutdown();
 
   int numDevices();
@@ -374,10 +354,11 @@ public:
   bool shuttingDown = false;                                  // TRUE if we are in shutdown process
   bool getShuttingDown() { return shuttingDown; };
   bool en35Host = false; // TRUE if we are connected to a host that supports the /EN35 signal
-  
+
 };
 
 extern iwmBus IWM;
 
+#define IWM_ACTIVE_DISK2 ((iwmDisk2 *) theFuji.get_disk_dev(MAX_SP_DEVICES + diskii_xface.iwm_active_drive() - 1))
 #endif // guard
 #endif /* BUILD_APPLE */

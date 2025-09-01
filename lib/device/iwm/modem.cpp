@@ -1,13 +1,12 @@
 #ifdef BUILD_APPLE
 
 #include <string.h>
-#include <lwip/netdb.h>
 
+#include "compat_inet.h"
 #include "../../include/atascii.h"
 #include "modem.h"
 #include "../hardware/fnUART.h"
 #include "fnWiFi.h"
-#include "fsFlash.h"
 #include "fnSystem.h"
 #include "../utils/utils.h"
 #include "fnConfig.h"
@@ -85,7 +84,9 @@ static void _modem_task(void *arg)
     while (true)
     {
         m->handle_modem();
+#ifdef ESP_PLATFORM // OS
         vTaskDelay(10);
+#endif
     }
 }
 
@@ -95,9 +96,11 @@ iwmModem::iwmModem(FileSystem *_fs, bool snifferEnable)
     modemSniffer = new ModemSniffer(activeFS, snifferEnable);
     set_term_type("dumb");
     telnet = telnet_init(telopts, _telnet_event_handler, 0, this);
-    mrxq = xQueueCreate(16384, sizeof(char));
-    mtxq = xQueueCreate(16384, sizeof(char));
+#ifdef ESP_PLATFORM // OS
+    mrxq = xQueueCreate(32770, sizeof(char));
+    mtxq = xQueueCreate(32770, sizeof(char));
     xTaskCreatePinnedToCore(_modem_task, "modemTask", 4096, this, MODEM_TASK_PRIORITY, &modemTask, MODEM_TASK_CPU);
+#endif
 }
 
 iwmModem::~iwmModem()
@@ -105,6 +108,7 @@ iwmModem::~iwmModem()
     if (modemSniffer != nullptr)
     {
         delete modemSniffer;
+        modemSniffer = nullptr;
     }
 
     if (telnet != nullptr)
@@ -112,9 +116,11 @@ iwmModem::~iwmModem()
         telnet_free(telnet);
     }
 
+#ifdef ESP_PLATFORM // OS
     vTaskDelete(modemTask);
     vQueueDelete(mrxq);
     vQueueDelete(mtxq);
+#endif
 }
 
 unsigned short iwmModem::modem_write(uint8_t *buf, unsigned short len)
@@ -123,7 +129,9 @@ unsigned short iwmModem::modem_write(uint8_t *buf, unsigned short len)
 
     while (len > 0)
     {
+#ifdef ESP_PLATFORM // OS
         xQueueSend(mrxq, &buf[l++], portMAX_DELAY);
+#endif
         len--;
     }
 
@@ -132,7 +140,9 @@ unsigned short iwmModem::modem_write(uint8_t *buf, unsigned short len)
 
 unsigned short iwmModem::modem_write(char c)
 {
+#ifdef ESP_PLATFORM // OS
     xQueueSend(mrxq, &c, portMAX_DELAY);
+#endif
     return 1;
 }
 
@@ -142,7 +152,9 @@ unsigned short iwmModem::modem_print(const char *s)
 
     while (*s != 0x00)
     {
+#ifdef ESP_PLATFORM // OS
         xQueueSend(mrxq, s++, portMAX_DELAY);
+#endif
         l++;
     }
 
@@ -158,7 +170,11 @@ unsigned short iwmModem::modem_print(int i)
 {
     char out[80];
 
+#ifdef ESP_PLATFORM
     itoa(i, out, 10);
+#else
+    snprintf(out, sizeof(out), "%d", i);
+#endif
 
     return modem_print(out);
 }
@@ -167,8 +183,10 @@ unsigned short iwmModem::modem_read(uint8_t *buf, unsigned short len)
 {
     unsigned short i, l = 0;
 
+#ifdef ESP_PLATFORM // OS
     for (i = 0; i < len; i++)
         l += xQueueReceive(mtxq, &buf[i], portMAX_DELAY);
+#endif
 
     return l;
 }
@@ -1095,11 +1113,15 @@ void iwmModem::handle_modem()
 
         // In command mode - don't exchange with TCP but gather characters to a string
         // if (SIO_UART.available() /*|| blockWritePending == true */ )
+#ifdef ESP_PLATFORM // OS
         if (uxQueueMessagesWaiting(mtxq))
+#endif
         {
-            char chr;
+            unsigned char chr;
 
+#ifdef ESP_PLATFORM // OS
             xQueueReceive(mtxq, &chr, portMAX_DELAY);
+#endif
 
             // Return, enter, new line, carriage return.. anything goes to end the command
             if ((chr == ASCII_LF) || (chr == ASCII_CR) || (chr == ATASCII_EOL))
@@ -1188,8 +1210,11 @@ void iwmModem::handle_modem()
             }
         }
 
+#ifdef ESP_PLATFORM // OS
         int sioBytesAvail = uxQueueMessagesWaiting(mtxq);
-
+#else
+        int sioBytesAvail;
+#endif
         // send from Atari to Fujinet
         if (sioBytesAvail && tcpClient.connected())
         {
@@ -1338,44 +1363,15 @@ void iwmModem::send_status_reply_packet()
 
 void iwmModem::send_status_dib_reply_packet()
 {
-    uint8_t data[25];
-
-    //* write data buffer first (25 bytes) 3 grp7 + 4 odds
-    // General Status byte
-    // Bit 7: Block  device
-    // Bit 6: Write allowed
-    // Bit 5: Read allowed
-    // Bit 4: Device online or disk in drive
-    // Bit 3: Format allowed
-    // Bit 2: Media write protected (block devices only)
-    // Bit 1: Currently interrupting (//c only)
-    // Bit 0: Currently open (char devices only)
-    data[0] = STATCODE_READ_ALLOWED | STATCODE_DEVICE_ONLINE;
-    data[1] = 0;    // block size 1
-    data[2] = 0;    // block size 2
-    data[3] = 0;    // block size 3
-    data[4] = 0x05; // ID string length - 11 chars
-    data[5] = 'M';
-    data[6] = 'O';
-    data[7] = 'D';
-    data[8] = 'E';
-    data[9] = 'M';
-    data[10] = ' ';
-    data[11] = ' ';
-    data[12] = ' ';
-    data[13] = ' ';
-    data[14] = ' ';
-    data[15] = ' ';
-    data[16] = ' ';
-    data[17] = ' ';
-    data[18] = ' ';
-    data[19] = ' ';
-    data[20] = ' ';                           // ID string (16 chars total)
-    data[21] = SP_TYPE_BYTE_FUJINET_MODEM;    // Device type    - 0x02  harddisk
-    data[22] = SP_SUBTYPE_BYTE_FUJINET_MODEM; // Device Subtype - 0x0a
-    data[23] = 0x00;                          // Firmware version 2 bytes
-    data[24] = 0x01;                          //
-    IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data, 25);
+    Debug_printf("\r\nMODEM: Sending DIB reply\r\n");
+	std::vector<uint8_t> data = create_dib_reply_packet(
+		"MODEM",                                                        // name
+		STATCODE_READ_ALLOWED | STATCODE_DEVICE_ONLINE,                 // status
+		{ 0, 0, 0 },                                                    // block size
+		{ SP_TYPE_BYTE_FUJINET_MODEM, SP_SUBTYPE_BYTE_FUJINET_MODEM },  // type, subtype
+		{ 0x00, 0x01 }                                                  // version.
+	);
+	IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data.data(), data.size());
 }
 
 void iwmModem::iwm_open(iwm_decoded_cmd_t cmd)
@@ -1401,9 +1397,13 @@ void iwmModem::iwm_read(iwm_decoded_cmd_t cmd)
 {
     uint16_t numbytes = get_numbytes(cmd); // cmd.g7byte3 & 0x7f) | ((cmd.grp7msb << 3) & 0x80);
     uint32_t addy = get_address(cmd);      // (cmd.g7byte5 & 0x7f) | ((cmd.grp7msb << 5) & 0x80);
+#ifdef ESP_PLATFORM // OS
     unsigned short mw = uxQueueMessagesWaiting(mrxq);
+#else
+    unsigned short mw;
+#endif
 
-    Debug_printf("\r\nDevice %02x READ %04x bytes from address %06x\n", id(), numbytes, addy);
+    Debug_printf("\r\nDevice %02x READ %04x bytes from address %06lx\n", id(), numbytes, addy);
 
     memset(data_buffer, 0, sizeof(data_buffer));
 
@@ -1418,7 +1418,9 @@ void iwmModem::iwm_read(iwm_decoded_cmd_t cmd)
         for (int i = 0; i < numbytes; i++)
         {
             char b;
+#ifdef ESP_PLATFORM // OS
             xQueueReceive(mrxq, &b, portMAX_DELAY);
+#endif
             data_buffer[i] = b;
             data_len++;
         }
@@ -1453,8 +1455,10 @@ void iwmModem::iwm_write(iwm_decoded_cmd_t cmd)
 
     {
         // DO write
+#ifdef ESP_PLATFORM // OS
         for (int i = 0; i < num_bytes; i++)
             xQueueSend(mtxq, &data_buffer[i], portMAX_DELAY);
+#endif
     }
 
     send_reply_packet(SP_ERR_NOERROR);
@@ -1483,7 +1487,11 @@ void iwmModem::iwm_ctrl(iwm_decoded_cmd_t cmd)
 
 void iwmModem::iwm_modem_status()
 {
+#ifdef ESP_PLATFORM // OS
     unsigned short mw = uxQueueMessagesWaiting(mrxq);
+#else
+    unsigned short mw;
+#endif
 
     //if (mw > 512)
     //    mw = 512;
@@ -1498,7 +1506,7 @@ void iwmModem::iwm_status(iwm_decoded_cmd_t cmd)
 {
     // uint8_t source = cmd.dest;                                                // we are the destination and will become the source // packet_buffer[6];
     uint8_t status_code = get_status_code(cmd); // (cmd.g7byte3 & 0x7f) | ((cmd.grp7msb << 3) & 0x80); // status codes 00-FF
-    Debug_printf("\r\nDevice %02x Status Code %02x\n", id(), status_code);
+    Debug_printf("\r\n[MODEM] Device %02x Status Code %02x\r\n", id(), status_code);
     // Debug_printf("\r\nStatus List is at %02x %02x\n", cmd.g7byte1 & 0x7f, cmd.g7byte2 & 0x7f);
 
     switch (status_code)
@@ -1524,30 +1532,30 @@ void iwmModem::process(iwm_decoded_cmd_t cmd)
 {
     switch (cmd.command)
     {
-    case 0x00: // status
+    case SP_CMD_STATUS:
         Debug_printf("\r\nhandling status command");
         iwm_status(cmd);
         break;
-    case 0x04: // control
+    case SP_CMD_CONTROL:
         Debug_printf("\r\nhandling control command");
         iwm_ctrl(cmd);
         Debug_printf("\r\ncontrol command done");
         break;
-    case 0x06: // open
+    case SP_CMD_OPEN:
         Debug_printf("\r\nhandling open command");
         iwm_open(cmd);
         break;
-    case 0x07: // close
+    case SP_CMD_CLOSE:
         Debug_printf("\r\nhandling close command");
         iwm_close(cmd);
         break;
-    case 0x08: // read
+    case SP_CMD_READ:
         Debug_printf("\r\nhandling read command");
         fnLedManager.set(LED_BUS, true);
         iwm_read(cmd);
         fnLedManager.set(LED_BUS, false);
         break;
-    case 0x09: // write
+    case SP_CMD_WRITE:
         Debug_printf("\r\nhandling write command");
         fnLedManager.set(LED_BUS, true);
         iwm_write(cmd);

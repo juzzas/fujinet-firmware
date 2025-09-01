@@ -1,4 +1,5 @@
 // .D82 - This is a sector-for-sector copy of an 8250 floppy disk
+//
 // https://vice-emu.sourceforge.io/vice_17.html#SEC363
 // https://ist.uwaterloo.ca/~schepers/formats/D80-D82.TXT
 //
@@ -7,7 +8,7 @@
 #ifndef MEATLOAF_MEDIA_D82
 #define MEATLOAF_MEDIA_D82
 
-#include "meat_io.h"
+#include "../meatloaf.h"
 #include "d64.h"
 
 
@@ -15,11 +16,11 @@
  * Streams
  ********************************************************/
 
-class D82IStream : public D64IStream {
+class D82MStream : public D64MStream {
     // override everything that requires overriding here
 
 public:
-    D82IStream(std::shared_ptr<MStream> is) : D64IStream(is) 
+    D82MStream(std::shared_ptr<MStream> is) : D64MStream(is) 
     {
         // D82 Partition Info
         std::vector<BlockAllocationMap> b = { 
@@ -71,18 +72,18 @@ public:
         sectorsPerTrack = { 23, 25, 27, 29 };
     };
 
-	virtual uint8_t speedZone( uint8_t track) override
-	{
+    virtual uint8_t speedZone(uint8_t track) override
+    {
         if (track < 78)
             return (track < 40) + (track < 54) + (track < 65);
         else
             return (track < 117) + (track < 131) + (track < 142);
-	};
+    };
 
 protected:
 
 private:
-    friend class D82File;
+    friend class D82MFile;
 };
 
 
@@ -90,11 +91,19 @@ private:
  * File implementations
  ********************************************************/
 
-class D82File: public D64File {
+class D82MFile: public D64MFile {
 public:
-    D82File(std::string path, bool is_dir = true) : D64File(path, is_dir) {};
+    D82MFile(std::string path, bool is_dir = true) : D64MFile(path, is_dir) 
+    {
+        size = 1066496; // Default - 154 tracks no errors
+    };
 
-    MStream* createIStream(std::shared_ptr<MStream> containerIstream) override;
+    MStream* getDecodedStream(std::shared_ptr<MStream> containerIstream) override
+    {
+        Debug_printv("[%s]", url.c_str());
+
+        return new D82MStream(containerIstream);
+    }
 };
 
 
@@ -103,18 +112,18 @@ public:
  * FS
  ********************************************************/
 
-class D82FileSystem: public MFileSystem
+class D82MFileSystem: public MFileSystem
 {
 public:
     MFile* getFile(std::string path) override {
-        return new D82File(path);
+        return new D82MFile(path);
     }
 
-    bool handles(std::string fileName) {
+    bool handles(std::string fileName) override {
         return byExtension(".d82", fileName);
     }
 
-    D82FileSystem(): MFileSystem("d82") {};
+    D82MFileSystem(): MFileSystem("d82") {};
 };
 
 

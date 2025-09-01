@@ -38,6 +38,7 @@ constexpr const char * const rs232Printer::printer_model_str[PRINTER_INVALID];
 rs232Printer::~rs232Printer()
 {
     delete _pptr;
+    _pptr = nullptr;
 }
 
 // write for W commands
@@ -72,7 +73,7 @@ void rs232Printer::rs232_write(uint8_t aux1, uint8_t aux2)
         linelen = 20;
         break;
     default:
-        linelen = 40;
+        linelen = 1;
     }
 
     memset(_buffer, 0, sizeof(_buffer)); // clear _buffer
@@ -160,7 +161,10 @@ void rs232Printer::rs232_status()
 void rs232Printer::set_printer_type(rs232Printer::printer_type printer_type)
 {
     // Destroy any current printer emu object
-    delete _pptr;
+    if (_pptr != nullptr)
+    {
+        delete _pptr;
+    }
 
     _ptype = printer_type;
     switch (printer_type)
@@ -225,6 +229,8 @@ void rs232Printer::set_printer_type(rs232Printer::printer_type printer_type)
         break;
     }
 
+    _pptr->setEOL('\r');
+    _pptr->setTranslate850(true);
     _pptr->initPrinter(_storage);
 }
 
@@ -242,7 +248,7 @@ void rs232Printer::shutdown()
 }
 /* Returns a printer type given a string model name
 */
-rs232Printer::printer_type rs232Printer::match_modelname(std::string model_name)
+rs232Printer::printer_type rs232Printer::match_modelname(const std::string &model_name)
 {
     const char *models[PRINTER_INVALID] =
         {
@@ -273,21 +279,21 @@ rs232Printer::printer_type rs232Printer::match_modelname(std::string model_name)
 }
 
 // Process command
-void rs232Printer::rs232_process(uint32_t commanddata, uint8_t checksum)
+void rs232Printer::rs232_process(cmdFrame_t *cmd_ptr)
 {
-    cmdFrame.commanddata = commanddata;
-    cmdFrame.checksum = checksum;
-
     if (!Config.get_printer_enabled())
+    {
         Debug_println("rs232Printer::disabled, ignoring");
+    }
     else
     {
+        cmdFrame = *cmd_ptr;
         switch (cmdFrame.comnd)
         {
         case RS232_PRINTERCMD_PUT: // Needed by A822 for graphics mode printing
         case RS232_PRINTERCMD_WRITE:
-            _lastaux1 = cmdFrame.aux1;
-            _lastaux2 = cmdFrame.aux2;
+            _lastaux1 = cmd_ptr->aux1;
+            _lastaux2 = cmd_ptr->aux2;
             _last_ms = fnSystem.millis();
             rs232_ack();
             rs232_write(_lastaux1, _lastaux2);

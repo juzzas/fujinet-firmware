@@ -1,11 +1,22 @@
 #ifndef SIO_H
 #define SIO_H
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-
 #include <forward_list>
 
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#else
+#include "sio/siocom/fnSioCom.h"
+#endif
+
+#ifdef ESP_PLATFORM
+#include "fnUART.h"
+#define MODEM_UART_T UARTManager
+#else
+// fnSioCom.h is included from bus.h
+#define MODEM_UART_T SioCom
+#endif
 
 #define DELAY_T4 850
 #define DELAY_T5 250
@@ -47,6 +58,7 @@ FN_HISPEED_INDEX=40 //  18,806 (18,806) baud
 #define SIO_STANDARD_BAUDRATE 19200
 
 #define SIO_HISPEED_LOWEST_INDEX 0x0A // Lowest HSIO index we'll accept
+#define SIO_HISPEED_x2_INDEX 0x10 // this index is accepted too (by FujiNet-PC)
 
 #define COMMAND_FRAME_SPEED_CHANGE_THRESHOLD 2
 #define SERIAL_TIMEOUT 300
@@ -146,6 +158,18 @@ protected:
      * Atari that we are now processing the command.
      */
     void sio_ack();
+
+    /**
+     * @brief Send an acknowledgement byte to the Atari 'A'
+     * - without NetSIO, send ACK as usually
+     * - with NetSIO, ACK is delayed untill we now how much data should be written by Atari to peripheral
+     *   ACK byte together with expected write size is send as part of SYNC_RESPONSE
+     */
+#ifdef ESP_PLATFORM
+    inline void sio_late_ack() { sio_ack(); };
+#else
+    void sio_late_ack();   
+#endif
 
     /**
      * @brief Send a non-acknowledgement (NAK) to the Atari 'N'
@@ -258,10 +282,14 @@ private:
 
     int _sioBaud = SIO_STANDARD_BAUDRATE;
     int _sioHighSpeedIndex = SIO_HISPEED_INDEX;
-    int _sioBaudHigh;
-    int _sioBaudUltraHigh;
+    int _sioBaudHigh = SIO_STANDARD_BAUDRATE;
+    int _sioBaudUltraHigh = SIO_STANDARD_BAUDRATE;
 
     bool useUltraHigh = false; // Use fujinet derived clock.
+
+#ifndef ESP_PLATFORM
+    bool _command_processed = false;
+#endif
 
     void _sio_process_cmd();
     void _sio_process_queue();
@@ -293,6 +321,11 @@ public:
     bool shuttingDown = false;                                  // TRUE if we are in shutdown process
     bool getShuttingDown() { return shuttingDown; };
 
+#ifndef ESP_PLATFORM
+    void set_command_processed(bool processed);
+    void sio_empty_ack();                                       // for NetSIO, notify hub we are not interested to handle the command
+#endif
+
     sioCassette *getCassette() { return _cassetteDev; }
     sioPrinter *getPrinter() { return _printerdev; }
     sioCPM *getCPM() { return _cpmDev; }
@@ -300,7 +333,13 @@ public:
     // I wish this codebase would make up its mind to use camel or snake casing.
     modem *get_modem() { return _modemDev; }
 
+#ifdef ESP_PLATFORM
     QueueHandle_t qSioMessages = nullptr;
+#endif
+
+    MODEM_UART_T* uart;             // UART manager to use.
+    void set_uart(MODEM_UART_T* _uart) { uart = _uart; }
+
 };
 
 extern systemBus SIO;

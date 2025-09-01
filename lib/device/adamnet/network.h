@@ -2,12 +2,12 @@
 #define NETWORK_H
 
 #include <esp_timer.h>
-
+#include <memory>
 #include <string>
 
 #include "bus.h"
 
-#include "EdUrlParser.h"
+#include "peoples_url_parser.h"
 
 #include "Protocol.h"
 
@@ -53,6 +53,11 @@ public:
     bool interruptProceed = false;
 
     /**
+     * @brief called to return the extended error number from a protocol adapter
+     */
+    virtual void get_error();
+
+    /**
      * Called for ADAM Command 'O' to open a connection to a network protocol, allocate all buffers,
      * and start the receive PROCEED interrupt.
      */
@@ -83,7 +88,6 @@ public:
     virtual void adamnet_control_ack();
     virtual void adamnet_control_clr();
     virtual void adamnet_control_receive();
-    virtual void adamnet_control_receive_channel();
     virtual void adamnet_control_receive_channel_json();
     virtual void adamnet_control_receive_channel_protocol();
     virtual void adamnet_control_send();
@@ -180,9 +184,9 @@ private:
     std::string *specialBuffer = nullptr;
 
     /**
-     * The EdUrlParser object used to hold/process a URL
+     * The PeoplesUrlParser object used to hold/process a URL
      */
-    EdUrlParser *urlParser = nullptr;
+    std::unique_ptr<PeoplesUrlParser> urlParser = nullptr;
 
     /**
      * Instance of currently open network protocol
@@ -304,7 +308,7 @@ private:
     /**
      * Create the deviceSpec and fix it for parsing
      */
-    void create_devicespec(string d);
+    void create_devicespec(std::string d);
 
     /**
      * Create a urlParser from deviceSpec

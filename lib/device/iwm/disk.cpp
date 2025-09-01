@@ -1,9 +1,14 @@
 #ifdef BUILD_APPLE
+#include <array>
+#include <cstdint>
+#include <vector>
+
 #include "disk.h"
 
 #include "fnSystem.h"
 // #include "fnFsTNFS.h"
 // #include "fnFsSD.h"
+#include "fsFlash.h"
 #include "led.h"
 #include "fuji.h"
 
@@ -13,6 +18,53 @@
 
 iwmDisk::~iwmDisk()
 {
+}
+
+// Status Info byte
+// Bit 7: Block  device
+// Bit 6: Write allowed
+// Bit 5: Read allowed
+// Bit 4: Device online or disk in drive
+// Bit 3: Format allowed
+// Bit 2: Media write protected
+// Bit 1: Currently interrupting (//c only)
+// Bit 0: Disk Switched 
+uint8_t iwmDisk::create_status()
+{
+  uint8_t status = 0b11101000;
+  status = (device_active) ? (status |   STATCODE_DEVICE_ONLINE) : 
+                             (status & ~(STATCODE_DEVICE_ONLINE));
+  if (readonly)               status |=  STATCODE_WRITE_PROTECT;
+  if (_disk != nullptr)       status |=  (1 << 4);
+
+  return status;
+}
+
+std::vector<uint8_t> iwmDisk::create_blocksize(bool is_32_bits)
+{
+  std::vector<uint8_t> block_size;
+  block_size.reserve(is_32_bits ? 4 : 3); // Reserve space for either 3 or 4 bytes
+
+  if (_disk != nullptr)
+  {
+    block_size.push_back(static_cast<uint8_t>(_disk->num_blocks & 0xff));
+    block_size.push_back(static_cast<uint8_t>((_disk->num_blocks >> 8) & 0xff));
+    block_size.push_back(static_cast<uint8_t>((_disk->num_blocks >> 16) & 0xff));
+
+    if (is_32_bits)
+    {
+        block_size.push_back(static_cast<uint8_t>((_disk->num_blocks >> 24) & 0xff));
+    }
+
+    Debug_printf("\r\nDIB number of blocks %lu\r\n", _disk->num_blocks);
+  }
+  else
+  {
+    // set vector all zeros of correct size
+    block_size.resize(is_32_bits ? 4 : 3, 0);
+  }
+
+  return block_size;
 }
 
 uint8_t iwmDisk::smartport_device_type()
@@ -54,37 +106,19 @@ uint8_t iwmDisk::smartport_device_subtype()
 //*****************************************************************************
 void iwmDisk::send_status_reply_packet()
 {
-  uint8_t data[4];
 
-  // Build the contents of the packet
-  // Info byte
-  // Bit 7: Block  device
-  // Bit 6: Write allowed
-  // Bit 5: Read allowed
-  // Bit 4: Device online or disk in drive
-  // Bit 3: Format allowed
-  // Bit 2: Media write protected
-  // Bit 1: Currently interrupting (//c only)
-  // Bit 0: Disk Switched 
-  data[0] = 0b11101000;
-  if((switched) && (device_active)) {
-    data[0] |= STATCODE_DISK_SWITCHED;
+  uint8_t status = create_status();
+  if (switched && device_active) {
+    status |= STATCODE_DISK_SWITCHED;
     switched = false;
-    }
-  if((!device_active)) {data[0] &= ~(STATCODE_DEVICE_ONLINE);}
-  if(device_active) {data[0] |= STATCODE_DEVICE_ONLINE;}
-  if(readonly) {data[0] |= STATCODE_WRITE_PROTECT;}
-  Debug_printf("\r\nsend_status_reply_packet status = %02X\r\n",data[0]);
-  data[1] = data[2] = data[3] = 0;
-  if (_disk != nullptr)
-  {
-    data[0] |= (1 << 4);
-    // Disk size
-    data[1] = _disk->num_blocks & 0xff;
-    data[2] = (_disk->num_blocks >> 8) & 0xff;
-    data[3] = (_disk->num_blocks >> 16) & 0xff;
   }
-  IWM.iwm_send_packet(id(),iwm_packet_type_t::status,SP_ERR_NOERROR, data, 4);
+
+  auto block_size = create_blocksize();
+
+  std::vector<uint8_t> data;
+  data.push_back(status);
+  data.insert(data.end(), block_size.begin(), block_size.end());
+  IWM.iwm_send_packet(id(), iwm_packet_type_t::status,SP_ERR_NOERROR, data.data(), data.size());
 }
 
 //*****************************************************************************
@@ -100,38 +134,19 @@ void iwmDisk::send_status_reply_packet()
 //*****************************************************************************
 void iwmDisk::send_extended_status_reply_packet() //XXX! Currently unused
 {
-  uint8_t data[5];
-  data[0] = 0b11101000;
-  if(!device_active) {data[0] &= ~(STATCODE_DEVICE_ONLINE);}
-  if(device_active) {data[0] |= STATCODE_DEVICE_ONLINE;}
-  if(switched) {
-    data[0] |= STATCODE_DISK_SWITCHED;
+  uint8_t status = create_status();
+  // TODO: is this correct? Should it be checking the device_active similar to send_status_reply_packet?
+  if (switched) {
+    status |= STATCODE_DISK_SWITCHED;
     switched = false;
-    }
-  if(readonly) {data[0] |= STATCODE_WRITE_PROTECT;}
-  Debug_printf("\r\nsend_extended_status_reply_packet status = %02X\r\n",data[0]);
-  // Build the contents of the packet
-  // Info byte
-  // Bit 7: Block  device
-  // Bit 6: Write allowed
-  // Bit 5: Read allowed
-  // Bit 4: Device online or disk in drive
-  // Bit 3: Format allowed
-  // Bit 2: Media write protected (block devices only)
-  // Bit 1: Currently interrupting (//c only)
-  // Bit 0: Currently open (char devices only)
-  data[1] = data[2] = data[3] = data[4] = 0;
-  if (_disk!=nullptr)
-  {
-    data[0] |= (1 << 4);
-    // Disk size
-    data[1] = _disk->num_blocks & 0xff;
-    data[2] = (_disk->num_blocks >> 8) & 0xff;
-    data[3] = (_disk->num_blocks >> 16) & 0xff;
-    data[4] = (_disk->num_blocks >> 24) & 0xff;
-  
   }
-  IWM.iwm_send_packet(id(), iwm_packet_type_t::ext_status, SP_ERR_NOERROR, data, 5);
+
+  auto block_size = create_blocksize(true);
+
+  std::vector<uint8_t> data;
+  data.push_back(status);
+  data.insert(data.end(), block_size.begin(), block_size.end());
+  IWM.iwm_send_packet(id(), iwm_packet_type_t::ext_status, SP_ERR_NOERROR, data.data(), data.size());
 }
 
 //*****************************************************************************
@@ -147,60 +162,18 @@ void iwmDisk::send_extended_status_reply_packet() //XXX! Currently unused
 //*****************************************************************************
 void iwmDisk::send_status_dib_reply_packet() // to do - abstract this out with passsed parameters
 {
-  uint8_t data[25];
+  uint8_t status = create_status();
+  auto block_size = create_blocksize();
 
-  //* write data buffer first (25 bytes) 3 grp7 + 4 odds
-  // General Status byte
-  // Bit 7: Block  device
-  // Bit 6: Write allowed
-  // Bit 5: Read allowed
-  // Bit 4: Device online or disk in drive
-  // Bit 3: Format allowed
-  // Bit 2: Media write protected (block devices only)
-  // Bit 1: Currently interrupting (//c only)
-  // Bit 0: Disk switched
-  data[0] = 0b11101000;
-  if((!device_active)) {data[0] &= ~(STATCODE_DEVICE_ONLINE);}
-  if(device_active) {data[0] |= STATCODE_DEVICE_ONLINE;}
-  if(readonly) {data[0] |= STATCODE_WRITE_PROTECT;}
-  Debug_printf("\r\nsend_status_dib_reply_packet status = %02X\r\n",data[0]);
-  data[1] = 0;
-  data[2] = 0;
-  data[3] = 0;
-  if (_disk != nullptr)
-  {
-    data[0] |= (1 << 4);
-    data[1] = (_disk->num_blocks) & 0xff;         // block size 1
-    data[2] = (_disk->num_blocks >> 8) & 0xff;  // block size 2
-    data[3] = (_disk->num_blocks >> 16) & 0xff; // block size 3
-    Debug_printf("\r\nDIB number of blocks %d", _disk->num_blocks);
-    //Debug_printf("\r\n%02x %02x %02x %02x", data[0], data[1], data[2], data[3]);
-  }
-  Debug_printf("\r\n%02x %02x %02x %02x", data[0], data[1], data[2], data[3]); // this debug is required to make it work
-  // ALERT!!!!!! The above debug is somehow required to make the assignment of data[0..3] above stick.
-  // otherwise, data[0..3]=0. Have no idea why!?!?!?!?!??!?!?!?!?!?!?!?!??!
-  data[4] = 0x0E; // ID string length - 14 chars
-  data[5] = 'F';
-  data[6] = 'U';
-  data[7] = 'J';
-  data[8] = 'I';
-  data[9] = 'N';
-  data[10] = 'E';
-  data[11] = 'T';
-  data[12] = '_';
-  data[13] = 'D';
-  data[14] = 'I';
-  data[15] = 'S';
-  data[16] = 'K';
-  data[17] = '_';
-  data[18] = disk_num; //'1';
-  data[19] = ' ';
-  data[20] = ' ';  // ID string (16 chars total)
-  data[21] = smartport_device_type();
-  data[22] = smartport_device_subtype();
-  data[23] = 0x01; // Firmware version 2 bytes
-  data[24] = 0x0f; //
-  IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data, 25);
+  Debug_printf("\r\nFUJINET_DISK_%c: Sending DIB reply with status: 0x%02X\n", disk_num, status);
+  std::vector<uint8_t> data = create_dib_reply_packet(
+    std::string("FUJINET_DISK_") + disk_num,                    // name
+    status,                                                     // status
+    block_size,                                                 // block size
+    { smartport_device_type(), smartport_device_subtype() },    // type, subtype
+    { 0x01, 0x0f }                                              // version.
+  );
+	IWM.iwm_send_packet(id(), iwm_packet_type_t::status, SP_ERR_NOERROR, data.data(), data.size());
 }
 
 //*****************************************************************************
@@ -216,64 +189,25 @@ void iwmDisk::send_status_dib_reply_packet() // to do - abstract this out with p
 //*****************************************************************************
 void iwmDisk::send_extended_status_dib_reply_packet() //XXX! currently unused
 {
-  uint8_t data[25];
+  uint8_t status = create_status();
+  auto block_size = create_blocksize();
 
-  //* write data buffer first (25 bytes) 3 grp7 + 4 odds
-  // General Status byte
-  // Bit 7: Block  device
-  // Bit 6: Write allowed
-  // Bit 5: Read allowed
-  // Bit 4: Device online or disk in drive
-  // Bit 3: Format allowed
-  // Bit 2: Media write protected (block devices only)
-  // Bit 1: Currently interrupting (//c only)
-  // Bit 0: Disk Switched
-  data[0] = 0b11101000;
-  if(switched) {
+  Debug_printf("FUJINET_DISK: Sending DIB reply with status: %02X\n", status);
+  std::vector<uint8_t> data = create_dib_reply_packet(
+    std::string("FUJINET_DISK_") + disk_num,  // name
+    status,                                   // status
+    block_size,                               // block size
+    { 0x02, 0x0a },                           // type, subtype
+    { 0x01, 0x0f }                            // version.
+  );
+
+  // TODO: is this correct? Should it be checking the device_active similar to send_status_reply_packet?
+  if (switched) {
     data[0] |= STATCODE_DISK_SWITCHED;
     switched = false;
-    }
-  if(!device_active) {data[0] &= ~(STATCODE_DEVICE_ONLINE);}
-  if(device_active) {data[0] |= STATCODE_DEVICE_ONLINE;}
-  if(readonly) {data[0] |= STATCODE_WRITE_PROTECT;}
-  Debug_printf("\r\nsend extended DIB replay packet status = %02X\r\n",data[0]);
-  data[1] = 0;
-  data[2] = 0;
-  data[3] = 0;
-  if (_disk != nullptr)
-  {
-    data[0] |= (1 << 4);
-    data[1] = (_disk->num_blocks) & 0xff;         // block size 1
-    data[2] = (_disk->num_blocks >> 8) & 0xff;  // block size 2
-    data[3] = (_disk->num_blocks >> 16) & 0xff; // block size 3
-    Debug_printf("\r\nDIB number of blocks %d", _disk->num_blocks);
-    //Debug_printf("\r\n%02x %02x %02x %02x", data[0], data[1], data[2], data[3]);
   }
-  Debug_printf("\r\n%02x %02x %02x %02x", data[0], data[1], data[2], data[3]); // this debug is required to make it work
-  // ALERT!!!!!! The above debug is somehow required to make the assignment of data[0..3] above stick.
-  // otherwise, data[0..3]=0. Have no idea why!?!?!?!?!??!?!?!?!?!?!?!?!??!
-  data[4] = 0x0E; // ID string length - 14 chars
-  data[5] = 'F';
-  data[6] = 'U';
-  data[7] = 'J';
-  data[8] = 'I';
-  data[9] = 'N';
-  data[10] = 'E';
-  data[11] = 'T';
-  data[12] = '_';
-  data[13] = 'D';
-  data[14] = 'I';
-  data[15] = 'S';
-  data[16] = 'K';
-  data[17] = '_';
-  data[18] = disk_num; //'1';
-  data[19] = ' ';
-  data[20] = ' ';  // ID string (16 chars total)
-  data[21] = 0x02; // Device type    - 0x02  harddisk
-  data[22] = 0x0a; // Device Subtype - 0x0a
-  data[23] = 0x01; // Firmware version 2 bytes
-  data[24] = 0x0f; //
-  IWM.iwm_send_packet(id(), iwm_packet_type_t::ext_status, SP_ERR_NOERROR, data, 25);
+
+  IWM.iwm_send_packet(id(), iwm_packet_type_t::ext_status, SP_ERR_NOERROR, data.data(), data.size());
 }
 
 void iwmDisk::iwm_ctrl(iwm_decoded_cmd_t cmd) 
@@ -309,43 +243,41 @@ void iwmDisk::process(iwm_decoded_cmd_t cmd)
   fnLedManager.set(LED_BUS, true);
   switch (cmd.command)
   {
-  case 0x00: // status
+  case SP_CMD_STATUS:
     Debug_printf("\r\nhandling status command");
     status_code = get_status_code(cmd); // (cmd.g7byte3 & 0x7f) | ((cmd.grp7msb << 3) & 0x00); // status codes 00-FF
-    if (disk_num == '0' && status_code > 0x05) // max regular status code is 0x05 to UniDisk
+    // max regular status code is 0x05 to UniDisk
+    if (disk_num == '0' && status_code > 0x05) {
+      // THIS IS AN OLD HACK FOR CALLING STATUS ON THE FUJI DEVICE INSTEAD OF ADDING THE_FUJI AS A DEVICE.
+      Debug_printf("\r\nUsing DISK_0 for FUJI device\r\n");
       theFuji.FujiStatus(cmd);
-    else  
+    }
+    else {
       iwm_status(cmd);
+    }
     break;
-  case 0x01: // read block
+  case SP_CMD_READBLOCK:
     Debug_printf("\r\nhandling read block command");
     iwm_readblock(cmd);
     break;
-  case 0x02: // write block
+  case SP_CMD_WRITEBLOCK:
     Debug_printf("\r\nhandling write block command");
     iwm_writeblock(cmd);
     break;
-  case 0x03: // format
+  case SP_CMD_FORMAT:
     iwm_return_noerror();
     break;
-  case 0x04: // control
+  case SP_CMD_CONTROL:
     status_code = get_status_code(cmd); // (cmd.g7byte3 & 0x7f) | ((cmd.grp7msb << 3) & 0x80); // status codes 00-FF
-    if (disk_num == '0' && status_code > 0x0A) // max regular control code is 0x0A to 3.5" disk
-      theFuji.FujiControl(cmd); // NEED TO FIX THIS IN CONFIG
-   else
+    // max regular control code is 0x0A to 3.5" disk
+    if (disk_num == '0' && status_code > 0x0A) {
+      // THIS IS AN OLD HACK FOR CALLING CONTROL ON THE FUJI DEVICE INSTEAD OF ADDING THE_FUJI AS A DEVICE.
+      Debug_printf("\r\nUsing DISK_0 for FUJI device\r\n");
+      theFuji.FujiControl(cmd);
+    }
+    else {
       iwm_ctrl(cmd);
-    break;
-  case 0x06: // open
-    iwm_return_badcmd(cmd);
-    break;
-  case 0x07: // close
-    iwm_return_badcmd(cmd);
-    break;
-  case 0x08: // read
-    iwm_return_badcmd(cmd);
-    break;
-  case 0x09: // write
-    iwm_return_badcmd(cmd);
+    }
     break;
   default:
     iwm_return_badcmd(cmd);
@@ -376,7 +308,7 @@ void iwmDisk::iwm_readblock(iwm_decoded_cmd_t cmd)
   // block_num = block_num + (((LBL & 0x7f) | (((unsigned short)LBH << 4) & 0x80)) << 8);
   // block_num = block_num + (((LBT & 0x7f) | (((unsigned short)LBH << 5) & 0x80)) << 16);
   block_num = get_block_number(cmd);
-  Debug_printf(" Read block %06x\r\n", block_num);
+  Debug_printf(" Read block %06lx\r\n", block_num);
   if (!(_disk != nullptr))
   {
     Debug_printf(" - ERROR - No image mounted");
@@ -424,7 +356,7 @@ void iwmDisk::iwm_writeblock(iwm_decoded_cmd_t cmd)
   // block num second byte
   //Added (unsigned short) cast to ensure calculated block is not underflowing.
   // block_num = block_num + (((cmd.g7byte4 & 0x7f) | (((unsigned short)cmd.grp7msb << 4) & 0x80)) * 256);
-  Debug_printf("Write block %06x", block_num);
+  Debug_printf("Write block %06lx", block_num);
   //get write data packet, keep trying until no timeout
   // to do - this blows up - check handshaking
   data_len = BLOCK_DATA_LEN;
@@ -500,60 +432,76 @@ iwmDisk::iwmDisk()
   // init();
 }
 
-mediatype_t iwmDisk::mount(FILE *f, const char *filename, uint32_t disksize, mediatype_t disk_type)
+mediatype_t iwmDisk::mount(fnFile *f, const char *filename, uint32_t disksize, mediatype_t disk_type)
 {
-  uint8_t deviceSlot = data_buffer[0]; // from mount ctrl cmd
-  mediatype_t mt = MEDIATYPE_UNKNOWN;
   Debug_printf("disk MOUNT %s\n", filename);
-   
+
   // Destroy any existing MediaType
   if (_disk != nullptr)
   {
     /* We need  first eject the current disk image */
-    unmount(); 
-   switched = true; //set disk switched only if we are mounting over an existing image.  
+    unmount();
+    switched = true; //set disk switched only if we are mounting over an existing image.
   }
 
   // Determine MediaType based on filename extension
-  if (disk_type == MEDIATYPE_UNKNOWN && filename != nullptr)
-    disk_type = MediaType::discover_mediatype(filename);
-
-  if (deviceSlot < 4) // SP drive
-  {    
-    switch (disk_type)
-    {
-    case MEDIATYPE_PO:
-        Debug_printf("\r\nMedia Type PO");
-        _disk = new MediaTypePO();
-        mt = _disk->mount(f, disksize);
-        device_active = true; //change status only after we are mounted
-        //_disk->fileptr() = f;
-        // mt = MEDIATYPE_PO;
-        break;
-    default:
-        Debug_printf("\r\nMedia Type UNKNOWN for SP Drive - no mount in disk.cpp");
-        device_active = false;
-        break;
-    }
+  if (disk_type == MEDIATYPE_UNKNOWN && filename != nullptr) {
+      disk_type = MediaType::discover_mediatype(filename);
   }
-  else // DiskII drive
-  {
-    switch (disk_type)
+
+  if (disk_type == MEDIATYPE_DSK) {
+      // determine DO or PO based on file contents
+      disk_type = MediaType::discover_dsk_mediatype(f, disksize);
+  }
+
+  mount_file(f, disksize, disk_type);
+
+  if (disk_type == MEDIATYPE_UNKNOWN) {
+      Debug_printf("\r\nMedia Type UNKNOWN - no mount in disk.cpp");
+      device_active = false;
+      is_config_device = false;
+  }
+  else if (_disk && strlen(_disk->_disk_filename))
+      strcpy(_disk->_disk_filename, filename);
+
+  return disk_type;
+}
+
+mediatype_t iwmDisk::mount_file(fnFile *f, uint32_t disksize, mediatype_t disk_type)
+{
+  switch (disk_type)
     {
-      case MEDIATYPE_DSK:
-      case MEDIATYPE_WOZ:
-          theFuji._fnDisk2s[deviceSlot - 4].init();
-          theFuji._fnDisk2s[deviceSlot - 4].mount(f, disk_type); // modulo to ensure device 0 or 1
+    case MEDIATYPE_DO:
+      Debug_printf("\r\nMedia Type DO");
+      _disk = new MediaTypeDO();
+      break;
+    case MEDIATYPE_PO:
+      Debug_printf("\r\nMedia Type PO");
+      _disk = new MediaTypePO();
       break;
     default:
-        Debug_printf("\r\nMedia Type UNKNOWN for DiskII - no mount in disk.cpp");
-        device_active = false;
-        break;
+      Debug_printf("\r\nUnsupported Media Type for SmartPort");
+      disk_type = MEDIATYPE_UNKNOWN;
+      break;
     }
+
+  if (disk_type != MEDIATYPE_UNKNOWN) {
+    _disk->_media_host = host;
+    _disk->_mediatype = disk_type;
+    disk_type = _disk->mount(f, disksize);
   }
 
-  return mt;
+  if (disk_type != MEDIATYPE_UNKNOWN) {
+    // firmware needs to believe a high score enabled disk is
+    // not write-protected. Otherwise it will skip write process
+    if (_disk->high_score_enabled)
+      readonly = false;
 
+    device_active = true; //change status only after we are mounted
+    is_config_device = false;
+  }
+
+  return disk_type;
 }
 
 void iwmDisk::unmount()
@@ -564,12 +512,13 @@ void iwmDisk::unmount()
         delete _disk;
         _disk = nullptr;
         device_active = false;
+	is_config_device = false;
         readonly = true;
         Debug_printf("Disk UNMOUNTED!!!!\r\n");
     }
 }
 
-bool iwmDisk::write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors)
+bool iwmDisk::write_blank(fnFile *f, uint16_t sectorSize, uint16_t numSectors)
 {
   
   return false;
@@ -579,11 +528,43 @@ bool iwmDisk::write_blank(FILE *f, uint16_t sectorSize, uint16_t numSectors)
  * Used for writing ProDOS images which exist in multiples of 
  * 512 byte blocks.
  */
-bool iwmDisk::write_blank(FILE *f, uint16_t numBlocks)
+bool iwmDisk::write_blank(fnFile *f, uint16_t numBlocks)
 {
   unsigned char buf[512];
 
   memset(&buf,0,sizeof(buf));
+
+  if (blank_header_type == 2) // DO
+  {
+    FILE *sf = fsFlash.file_open("/blank.do","rb");
+    if (!sf)
+    {
+      Debug_printf("Could not open /blank.do. Aborting.\n");
+      fclose(sf);
+      return true;
+    }
+
+    while (!feof(sf))
+    {
+      if (fread(buf,sizeof(unsigned char),sizeof(buf),sf) != sizeof(buf))
+      {
+        Debug_printf("Short read of blank.do, aborting.\n");
+        fclose(sf);
+        return true;
+      }
+      if (fnio::fwrite(buf,sizeof(unsigned char),sizeof(buf),f) != sizeof(buf))
+      {
+        Debug_printf("Short write to destination image. Aborting.\n");
+        fclose(sf);
+        return true;
+      }
+    }
+
+    fclose(sf);
+    Debug_printf("Creation of new DOS 3.3 disk successful.\n");
+    blank_header_type=0; // Set to unadorned.
+    return false;
+  }
 
   if (blank_header_type == 1) // 2MG
   {
@@ -611,14 +592,14 @@ bool iwmDisk::write_blank(FILE *f, uint16_t numBlocks)
 
     header.numBlocks = numBlocks;
 
-    fwrite(&header,sizeof(header),1,f);
+    fnio::fwrite(&header,sizeof(header),1,f);
   }
 
   long offset = (numBlocks - 1) * 512;
 
   // Sparse Write
-  fseek(f,offset,SEEK_SET);
-  fwrite(&buf,sizeof(unsigned char),sizeof(buf),f);
+  fnio::fseek(f,offset,SEEK_SET);
+  fnio::fwrite(&buf,sizeof(unsigned char),sizeof(buf),f);
 
   blank_header_type = 0; // Reset to unadorned.
   return false;
